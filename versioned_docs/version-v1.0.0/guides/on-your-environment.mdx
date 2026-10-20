@@ -1278,11 +1278,14 @@ helm upgrade observability-logs-opensearch \
   --timeout 10m
 
 # Metrics module
+# The chart defaults Prometheus to a LoadBalancer Service, which would put its
+# unauthenticated API on a public IP. Everything that queries it is in-cluster.
 helm upgrade --install observability-metrics-prometheus \
   oci://ghcr.io/openchoreo/helm-charts/observability-metrics-prometheus \
   --create-namespace \
   --namespace openchoreo-observability-plane \
   --version 0.6.1 \
+  --set kube-prometheus-stack.prometheus.service.type=ClusterIP \
   --timeout 10m
 
 # Tracing module (uses the custom OTel Collector ConfigMap)
@@ -1744,6 +1747,13 @@ Work down this table against an existing install. The **When** column matters: t
 | Stateless services running multiple replicas | [High availability](#high-availability-and-scaling) | Any time |
 | NetworkPolicies, RBAC, and Pod Security Standards applied | [Cluster security](#certificates-and-cluster-security) | Any time |
 | Stronger isolation tier chosen where agents run untrusted code | [Agent isolation](#agent-isolation) | Any time, per environment |
+| Only the three plane gateways are LoadBalancer Services | [Step 8](#step-8-setup-observability-plane) | Any time |
+
+The only LoadBalancer Services should be the `gateway-default` Service of each of the three planes. Anything else in this list is reachable from outside the cluster, so convert it to `ClusterIP`:
+
+```bash
+kubectl get svc -A --field-selector spec.type=LoadBalancer
+```
 
 ### After a chart upgrade
 
