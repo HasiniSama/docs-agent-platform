@@ -147,7 +147,7 @@ Each server-sent event is one line: first the `Task`, then a `working` status up
 
 ## Call It from an A2A Client
 
-Any A2A client works. Point it at the gateway paths from Step 2 rather than the URLs inside the card, because the card fetched through the gateway may still list the agent's own address. The [sample README](https://github.com/wso2/agent-manager/tree/main/samples/a2a-agent#call-it-from-an-a2a-client) includes an `a2a-sdk` client example.
+Any A2A client works. Point it at the agent's card through the gateway, `<invoke-url>/.well-known/agent-card.json`. The gateway rewrites the card's interface URLs to its own `/rpc` and `/rest` paths, so the client calls the agent through the gateway. The [sample README](https://github.com/wso2/agent-manager/tree/main/samples/a2a-agent#call-it-from-an-a2a-client) includes an `a2a-sdk` client example.
 
 ## Troubleshooting
 

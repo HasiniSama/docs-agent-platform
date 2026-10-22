@@ -106,9 +106,7 @@ curl -X POST "<invoke-url>/rpc" \
 
 Replace `<agent-api-key>` with a key for the agent, or drop the `X-API-Key` header if the agent uses **No authentication**. For OAuth, send the token in the header the agent is configured for instead.
 
-:::note Configure clients with the gateway paths
-The card fetched through the gateway may still list the agent's own address in its interface URLs. When you configure an A2A client, point it at `<invoke-url>/rpc` or `<invoke-url>/rest` rather than relying on the URLs in the card.
-:::
+An A2A client can instead fetch the card from `<invoke-url>/.well-known/agent-card.json`. The gateway rewrites the URLs of the A2A `1.0` interfaces it fronts to point at itself, so the client calls the agent through the gateway.
 
 ## Next Steps
 
