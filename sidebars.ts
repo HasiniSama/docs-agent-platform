@@ -66,6 +66,7 @@ const sidebars: SidebarsConfig = {
           ],
         },
         'guides/deploy-an-a2a-agent',
+        'guides/register-an-external-a2a-agent',
         {
           type: 'category',
           label: 'Evaluation & Observability',
