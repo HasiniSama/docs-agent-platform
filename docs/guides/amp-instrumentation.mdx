@@ -327,4 +327,6 @@ These are covered by the [instrumentation matrix test suite](https://github.com/
 CrewAI 1.14 has not been tested on 0.4.0, 0.4.1, or 0.4.2, because the matrix pins CrewAI 1.1.0 for every version. All three resolve an `opentelemetry-api` above CrewAI 1.14.5's ceiling, so the same conflict is likely there, but it is unconfirmed. Stay on 1.1.x unless you have verified the combination yourself.
 :::
 
+OpenClaw is not in the matrix. It exports traces through its own plugin and is partially supported. See [Observe OpenClaw Agents](./observe-openclaw-agents.mdx).
+
 The canonical source for the verified-framework list is [`test/instrumentation-matrix/matrix.yaml`](https://github.com/wso2/agent-manager/blob/main/test/instrumentation-matrix/matrix.yaml); known limitations are tracked in [`FINDINGS.md`](https://github.com/wso2/agent-manager/blob/main/test/instrumentation-matrix/FINDINGS.md) alongside it.

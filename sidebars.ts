@@ -74,6 +74,7 @@ const sidebars: SidebarsConfig = {
             'guides/custom-evaluators',
             'guides/evaluation-monitors',
             'guides/configure-trace-sampling',
+            'guides/observe-openclaw-agents',
           ],
         },
         {
