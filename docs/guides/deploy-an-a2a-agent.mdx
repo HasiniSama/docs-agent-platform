@@ -119,14 +119,14 @@ Saving these settings republishes the agent to the gateway. Promoting the agent 
 
 ## Step 3: Check the Agent Card
 
-Each time the gateway publishes the agent in an environment, Agent Manager fetches the agent's card through that gateway and stores it for the environment.
+Once the agent is deployed, Agent Manager reads its card in each environment and shows it in the Console.
 
 1. Open the agent. In the left sidebar, under **Agent Lifecycle**, click **Configure**.
 2. Click the **A2A** tab, then select the environment's tab.
 
 The **Agent Card** panel shows the card's name, version, **Interfaces**, and **Skills**, with the time it was fetched. Click **View JSON** to see the whole card. The agent's overview shows a summary of the same card in its **Agent Card** section.
 
-The card shows **Pending** until the first fetch succeeds. A failed fetch is retried with a growing delay of up to one minute, and after 14 failed attempts the card shows **Failed** with the reason. Fix the cause, then click **Refetch**. Click **Refetch** as well after you change the card the agent serves without redeploying it.
+The card shows **Pending** until Agent Manager has read it. If it shows **Failed**, fix the cause shown with it, then click **Refetch**. Click **Refetch** as well after you change the card the agent serves without redeploying it.
 
 ## Step 4: Call the Agent
 
@@ -156,7 +156,7 @@ curl -X POST "<invoke-url>/rpc" \
 
 Replace `<agent-api-key>` with a key for the agent, or drop the `X-API-Key` header if the agent uses **No authentication**. For OAuth, send the token in the header the agent is configured for instead.
 
-An A2A client can instead fetch the card from `<invoke-url>/.well-known/agent-card.json`. The gateway rewrites the URLs of the A2A `1.0` interfaces it fronts to point at itself, so the client calls the agent through the gateway.
+An A2A client can instead fetch the card from `<invoke-url>/.well-known/agent-card.json`. That card lists the gateway URLs, so the client calls the agent through the gateway.
 
 ## Next Steps
 
