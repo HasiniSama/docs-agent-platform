@@ -247,6 +247,7 @@ There is no chart-only downgrade after the database migration. Keep the installa
 2. Restore the database:
 
    ```bash
+   export PGPW="$(kubectl get secret amp-postgresql -n "$AMP_NS" -o jsonpath='{.data.password}' | base64 -d)"
    kubectl exec -i -n "$AMP_NS" amp-postgresql-0 -- env PGPASSWORD="$PGPW" \
      pg_restore -U agentmanager -d agentmanager --clean --if-exists \
      < upgrade-backup/ams-1.0.0.dump
