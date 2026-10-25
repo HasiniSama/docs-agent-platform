@@ -1,0 +1,233 @@
+---
+title: Upgrade platform dependencies
+sidebar_label: Platform dependencies
+description: Upgrade OpenChoreo, platform and environment ThunderID, and Gateway Operator as part of the Agent Manager migration.
+---
+
+:::caution Draft procedure under validation
+This procedure accompanies the [v1.0.0 upgrade guide](./from-v1-0-0.mdx). The version matrix is derived from the source installation scripts for the target build. An installation script establishes intended versions; it does not establish that a populated upgrade or recovery has passed. Validate the combined sequence in staging before production use.
+:::
+
+## Target chart versions
+
+The Agent Manager version is not the version of every dependency. Set all installed components to the versions below, preserving deployment-specific configuration. Reconcile the inventory with `helm list -A` in every cluster. Record each release's current chart, target chart, namespace, context, image overrides, and verification result.
+
+| Component / chart | Standard Agent Manager v1.0.0 baseline | Target | Action |
+| --- | --- | --- | --- |
+| `openchoreo-control-plane` | 1.2.0 | 1.2.8 | Review CRDs and upgrade first among OpenChoreo planes. |
+| `openchoreo-data-plane` | 1.2.0 | 1.2.8 | Upgrade each data-plane installation. |
+| `openchoreo-workflow-plane` | 1.2.0 | 1.2.8 | Upgrade each workflow-plane installation. |
+| `openchoreo-observability-plane` | 1.2.0 | 1.2.8 | Upgrade each observability-plane installation. |
+| `wso2-amp-thunder-extension` | v1.0.0 release | 0.0.0-dev | Upgrade the Agent Manager extension; its bundled ThunderID dependency is 1.0.1. |
+| Environment `thunderid` charts | Inventory each instance | 1.0.1 | Upgrade every existing environment instance separately. |
+| `wso2-amp-platform-resources-extension` | v1.0.0 release | 0.0.0-dev | Upgrade before or alongside Agent Manager; validate ordering. |
+| `wso2-agent-manager` | v1.0.0 release | 0.0.0-dev | Run and verify database migrations. |
+| `wso2-amp-observability-extension` | v1.0.0 release | 0.0.0-dev | Upgrade after its OpenChoreo plane. |
+| `wso2-amp-evaluation-extension` | v1.0.0 release | 0.0.0-dev | Upgrade after its OpenChoreo workflow plane. |
+| `wso2-amp-api-platform-gateway-extension` | v1.0.0 release | 0.0.0-dev | Upgrade once per gateway, with migrated values. |
+| `gateway-operator` | 0.11.0 | 0.11.3 | Review CRDs; coordinate with gateway state reset. |
+| Operator-managed API Platform gateway chart | 1.2.2 | 2026.09.24 | Pin in operator values; controller/runtime images also change from 1.2.1 to 2026.09.24. |
+
+All six Agent Manager charts in the release manifest are covered above. The platform ThunderID subchart advances from 1.0.0 to 1.0.1; upgrading the parent extension does not update separate environment releases.
+
+Gateway Operator chart 0.11.3 declares application version 0.11.1. Keep chart and application versions distinct when verifying it; do not force the operator image to 0.11.3 merely to match the chart number.
+
+### Other installed charts and shared infrastructure
+
+These pins are unchanged between the standard v1.0.0 installer and the target installer. Verify them and preserve configuration; do not arbitrarily upgrade them to the Agent Manager version or the newest upstream release.
+
+| Component | Target installer pin | Handling |
+| --- | --- | --- |
+| `observability-logs-opensearch` | 0.5.3 | Retain and verify logs and storage. |
+| `observability-tracing-opensearch` | 0.6.0 | Retain and verify historical/new traces. The default release name is `observability-traces-opensearch`. |
+| `observability-metrics-prometheus` | 0.6.1 | Retain and verify metrics and persistence. |
+| `cert-manager` | v1.19.2 | Retain; verify certificates and issuers. |
+| `external-secrets` | 1.3.2 | Retain; verify external secret synchronization. |
+| `kgateway-crds`, `kgateway` | v2.2.1 | Retain this tested installer combination pending compatibility review. This is distinct from WSO2 Gateway Operator. |
+| Kubernetes Gateway API CRDs | v1.4.1, experimental channel | Not a Helm release; record served/stored versions and preserve compatibility. |
+| `openbao` | 0.25.6 | Retain storage, initialization/unseal state, and authentication configuration. |
+| Local `docker-registry` | No explicit chart version in the installer | Record and retain the installed version and storage. A reproducible target pin remains to be supplied. |
+| Optional agent sandbox module | 0.1.1, upstream v0.4.6 in the target helper | Inventory if installed; confirm source compatibility and CRD requirements before changing it. |
+
+Record any additional/custom charts explicitly. A component absent from the standard installer is not automatically safe to remove or upgrade. If an installed prerequisite differs from these pins, treat that as a separate compatibility/migration decision before proceeding.
+
+## 1. Back up dependency state
+
+Complete the main guide's maintenance and backup steps. Also preserve:
+
+- OpenChoreo CRDs and custom resources across all namespaces, including project/component types, projects, components, environments, deployment pipelines, release resources and bindings, and plane registrations. Use cluster/provider backup tooling that preserves dependencies; a few resource YAML exports alone are not a full recovery backup.
+- Each plane's Helm values, generated credentials, cluster-agent trust, and registered endpoints.
+- OpenSearch, Prometheus, registry and workflow data according to the backing store's consistent backup procedure.
+- Every Thunder instance's database/persistent volume, signing/encryption material, clients, users, roles, trusted issuers, and credential Secrets. Preserve environment handles, issuer URLs, CA bundle ConfigMaps, volume mounts, and routing resources.
+- Gateway Operator CRDs and APIGateway custom resources, in addition to controller databases and encryption keys.
+
+Test restoration of each affected stateful dependency. Retain a before/after inventory rather than relying on pod readiness alone.
+
+## 2. Choose the OpenChoreo migration path
+
+```bash
+helm list -A
+kubectl get projects.openchoreo.dev -A
+```
+
+For the standard Agent Manager v1.0.0 installation, OpenChoreo starts at 1.2.0. Use the patch upgrade below to reach 1.2.8, reviewing intervening 1.2.x release notes and chart differences.
+
+For an installation on OpenChoreo 1.1.x or earlier, complete the applicable upstream minor-version migrations first. The [1.1-to-1.2 guide](https://openchoreo.dev/docs/platform-engineer-guide/upgrades/v1.1-to-v1.2/) includes a staged `Project.spec.type` backfill and project release bindings. Do not apply a strict target schema to old resources before completing that migration. Follow each required intermediate transition and then continue to 1.2.8.
+
+:::warning Match the guide to the installed platform
+The live upstream minor-upgrade guide currently describes Gateway API/kgateway and observability-module versions different from this Agent Manager snapshot's installer pins. Do not copy those updates into the standard 1.2.0-to-1.2.8 path. For an older or customized installation, resolve the dependency matrix with the platform maintainers before executing that minor-version migration.
+:::
+
+## 3. Upgrade all OpenChoreo planes to 1.2.8
+
+Perform the following procedure one plane at a time, in this order. Verify each before proceeding:
+
+| Order | Chart / default release | Default namespace |
+| --- | --- | --- |
+| 1 | `openchoreo-control-plane` | `openchoreo-control-plane` |
+| 2 | `openchoreo-data-plane` | `openchoreo-data-plane` |
+| 3 | `openchoreo-workflow-plane` | `openchoreo-workflow-plane` |
+| 4 | `openchoreo-observability-plane` | `openchoreo-observability-plane` |
+
+Repeat for each installation when a plane spans multiple clusters. Set the actual context, release, and namespace; do not apply all plane resources to the current cluster by assumption.
+
+Example for the control plane, after reviewing the target CRDs and completing any required older-version migration:
+
+```bash
+export OC_VERSION="1.2.8"
+export OC_CHART="openchoreo-control-plane"
+export OC_RELEASE="openchoreo-control-plane"
+export OC_NS="openchoreo-control-plane"
+export OC_CONTEXT="your-control-plane-context"
+export OC_REG="oci://ghcr.io/openchoreo/helm-charts"
+mkdir -p upgrade-backup upgrade-charts
+
+helm get values "$OC_RELEASE" -n "$OC_NS" --kube-context "$OC_CONTEXT" \
+  -o yaml > "upgrade-backup/${OC_RELEASE}-user-values.yaml"
+helm pull "$OC_REG/$OC_CHART" --version "$OC_VERSION" \
+  --untar --untardir upgrade-charts
+```
+
+Compare the chart's CRDs with the installed definitions, including required fields, served/storage versions, and existing resource compatibility. Preserve the old definitions for recovery. Helm does not update CRDs installed through a chart's `crds/` directory.
+
+If the target chart contains CRDs and the reviewed change is compatible:
+
+```bash
+kubectl --context "$OC_CONTEXT" apply --server-side \
+  -f "upgrade-charts/$OC_CHART/crds/"
+```
+
+If server-side apply reports ownership conflicts, inspect the fields and their current managers. Use a deliberate ownership transfer only for reviewed changes; do not automatically force every conflict. A schema rejection or stored-version conflict requires resolving the migration, not bypassing it.
+
+Review and retain user overrides, explicitly updating obsolete image pins and changed settings. Then upgrade that plane:
+
+```bash
+helm upgrade "$OC_RELEASE" "$OC_REG/$OC_CHART" \
+  --version "$OC_VERSION" -n "$OC_NS" --kube-context "$OC_CONTEXT" \
+  --reset-then-reuse-values --timeout 15m --wait
+helm status "$OC_RELEASE" -n "$OC_NS" --kube-context "$OC_CONTEXT"
+kubectl --context "$OC_CONTEXT" get pods -n "$OC_NS"
+```
+
+Use the same procedure with each subsequent row of the plane table and its actual context. This updates all four plane charts, not only the control plane.
+
+Check after each stage:
+
+- Control plane: API availability, controllers, existing projects/components and release bindings, and plane registration.
+- Data plane: cluster-agent connectivity, existing workloads, routing, and access to secrets.
+- Workflow plane: cluster-agent/controller health, registry connectivity, and a representative build after maintenance permits it. Review changed bundled workflow-controller resources against cluster capacity.
+- Observability plane: collector/observer health, stored data, and log/metric/trace ingestion.
+
+Retest the unchanged observability modules against the upgraded plane. Do not overwrite custom persistence or retention settings with fresh-install values.
+
+## 4. Upgrade platform ThunderID to 1.0.1
+
+The platform instance is a dependency of the Agent Manager Thunder extension. Upgrade the extension to the Agent Manager target version and explicitly select the expected Thunder image, preserving the existing registry and repository unless the deployment requires a change:
+
+```bash
+export VERSION="0.0.0-dev"
+export REG="oci://ghcr.io/wso2"
+export THUNDER_VERSION="1.0.1"
+
+helm upgrade amp-thunder-extension "$REG/wso2-amp-thunder-extension" \
+  --version "$VERSION" -n amp-thunder \
+  --reset-then-reuse-values \
+  --set-string thunder.deployment.image.tag="$THUNDER_VERSION" \
+  --timeout 15m --wait
+```
+
+The target extension's Chart.yaml pins the `thunderid` subchart to 1.0.1. Check the actual image after rollout; a subchart dependency update alone does not guarantee that old image overrides were removed. If platform Thunder is externally managed or disabled in the extension, use that deployment's upgrade procedure instead.
+
+Validate database compatibility and any required Thunder migrations against the installed source version before running the upgrade. Do not claim database downgrade support without a tested restore. Verify existing users, roles, clients, console login/logout, refresh, discovery and JWKS, and credentials used by OpenChoreo and Agent Manager.
+
+## 5. Upgrade every environment Thunder instance
+
+List all environment instances from the Helm inventory and correlate them with Agent Manager environments. These are independent releases of the upstream `thunderid` chart; upgrading `amp-thunder-extension` does not change them.
+
+For each instance, back up its state and export its full manifest and user values. The environment installer may apply CA bundle mounts and other configuration after Helm deployment. Capture those differences and carry them into the target configuration or a reviewed post-upgrade patch; do not assume that Helm values preserve them.
+
+For an instance whose complete target values have been prepared and rendered:
+
+```bash
+export ENV_THUNDER_RELEASE="your-existing-environment-thunder-release"
+export ENV_THUNDER_NS="your-existing-environment-thunder-namespace"
+export ENV_CONTEXT="your-environment-cluster-context"
+export THUNDER_VERSION="1.0.1"
+
+helm get values "$ENV_THUNDER_RELEASE" -n "$ENV_THUNDER_NS" \
+  --kube-context "$ENV_CONTEXT" -o yaml \
+  > "upgrade-backup/${ENV_THUNDER_RELEASE}-user-values.yaml"
+helm get manifest "$ENV_THUNDER_RELEASE" -n "$ENV_THUNDER_NS" \
+  --kube-context "$ENV_CONTEXT" \
+  > "upgrade-backup/${ENV_THUNDER_RELEASE}-manifest.yaml"
+
+# Prepare this complete file from the saved values and target chart before proceeding.
+helm upgrade "$ENV_THUNDER_RELEASE" \
+  oci://ghcr.io/thunder-id/helm-charts/thunderid \
+  --version "$THUNDER_VERSION" -n "$ENV_THUNDER_NS" \
+  --kube-context "$ENV_CONTEXT" \
+  --reset-values -f environment-thunder-target-values.yaml \
+  --set-string deployment.image.tag="$THUNDER_VERSION" \
+  --timeout 15m --wait
+```
+
+Use a separate values file for each instance. Preserve system-client Secrets, storage, organization/environment handles, issuer and public URLs, trusted issuer settings, JWKS audience, CA trust and routing. Do not regenerate client credentials or recreate identities as an upgrade shortcut.
+
+Check token issuance and validation, existing agent credentials, MCP authorization, and platform-to-environment trust before proceeding to the next instance. Review the target environment installer for the expected post-install CA mount behavior; any required reapplication must be included in the tested procedure.
+
+## Gateway Operator CRDs
+
+Perform this step during the main guide's coordinated gateway migration, after Agent Manager is ready for resynchronization. Do not upgrade the operator early: it can reconcile and roll multiple gateways.
+
+```bash
+export GW_OPERATOR_VERSION="0.11.3"
+export GATEWAY_CONTEXT="your-gateway-cluster-context"
+helm show crds \
+  oci://ghcr.io/wso2/api-platform/helm-charts/gateway-operator \
+  --version "$GW_OPERATOR_VERSION" \
+  > upgrade-charts/gateway-operator-crds.yaml
+```
+
+Back up the installed operator CRDs and custom resources. Review schema and controller compatibility and confirm the output contains the expected CRDs. Apply reviewed changes to each cluster running the operator:
+
+```bash
+kubectl --context "$GATEWAY_CONTEXT" apply --server-side \
+  -f upgrade-charts/gateway-operator-crds.yaml
+```
+
+Set `GATEWAY_CONTEXT` to the inventoried cluster and use that same context for the operator Helm command in the main guide. Resolve field-ownership and schema conflicts deliberately. Then follow the main guide to reset gateway state, upgrade the operator to 0.11.3 and managed gateways to 2026.09.24, and upgrade each gateway extension. Confirm operator readiness and each APIGateway's conditions separately.
+
+## Completion and recovery
+
+Reconcile the after-upgrade Helm inventory against every row of the target matrix. Include platform and all environment identity instances, all four OpenChoreo planes, all six Agent Manager chart types, every gateway, and unchanged shared services. Save the resulting chart and image versions with the test evidence.
+
+Recover a failed dependency stage using the matching backed-up data, resource schemas, chart revisions and credentials. Helm rollback does not restore CRDs or persistent databases. Never downgrade a controller against an incompatible schema or restore identity data without its signing/encryption material. Complete dependency health and authentication checks before resuming Agent Manager recovery or rollout.
+
+## References
+
+- [Target Agent Manager installer](https://github.com/wso2/agent-manager/blob/ed55c6f/deployments/quick-start/install.sh)
+- [Agent Manager v1.0.0 installer](https://github.com/wso2/agent-manager/blob/amp/v1.0.0/deployments/quick-start/install.sh)
+- [Thunder extension dependency](https://github.com/wso2/agent-manager/blob/ed55c6f/deployments/helm-charts/wso2-amp-thunder-extension/Chart.yaml)
+- [Environment Thunder installer](https://github.com/wso2/agent-manager/blob/ed55c6f/deployments/scripts/add-environment-thunder.sh)
+- [OpenChoreo 1.2.8 release](https://github.com/openchoreo/openchoreo/releases/tag/v1.2.8)
+- [OpenChoreo upgrade overview](https://openchoreo.dev/docs/platform-engineer-guide/upgrades/overview/)

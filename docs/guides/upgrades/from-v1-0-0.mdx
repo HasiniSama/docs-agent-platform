@@ -1,0 +1,243 @@
+---
+title: Upgrade from v1.0.0 to v0.0.0-dev
+sidebar_label: From v1.0.0
+description: Migrate an existing Helm installation, including Agent Manager database and API Platform gateway changes.
+---
+
+:::caution Draft procedure under validation
+This guide is being validated against the development snapshot for the next release. The component ordering and gateway database reset require the checks listed in the accompanying draft review notes before this procedure is published for production use.
+:::
+
+This guide covers an existing v1.0.0 Helm installation. It uses quick-start release names and namespaces as examples. Discover and substitute the actual names in your installation, including every gateway in every organization and environment.
+
+## Breaking changes
+
+| Change | Impact | Required action |
+| --- | --- | --- |
+| OpenChoreo moves from 1.2.0 to 1.2.8 in the standard installation | All four planes need matching target charts and a CRD compatibility check. Older customized installations may also need a minor-version migration. | Follow the [dependency migration procedure](./platform-dependencies.mdx) before upgrading Agent Manager. |
+| ThunderID moves from 1.0.0 to 1.0.1 | Platform identity and each environment's identity instance must retain their data, credentials, issuer configuration, and trust. | Upgrade platform Thunder and each environment Thunder instance separately. |
+| Gateway Operator moves from 0.11.0 to 0.11.3 | The operator itself and its CRDs change in addition to the gateways it manages. | Review/apply the target operator CRDs and coordinate the operator rollout with the gateway database migration. |
+| Agent Manager PostgreSQL schema advances from 0043 to 0050 | The v1.0.0 application rejects migrations it does not recognize. A chart rollback alone cannot restore v1.0.0. | Back up PostgreSQL before upgrading. Verify migrations 0044–0050 and retain a tested database restore procedure. |
+| Gateway controller SQLite schema changes from version 4 to 5 | The target gateway cannot open the old database. | Back up each controller's state and recreate its database during the coordinated gateway rollout. Verify resynchronization from Agent Manager. |
+| `apiGateway.config.systemEnv` is removed | Keeping the old setting causes the gateway extension to fail to render. | Remove it and migrate the configuration to `config_toml` and `systemExtraEnv`. |
+| The gateway catch-all route timeout changes from 30 seconds to unlimited | Existing assumptions about request termination may no longer hold. | Review timeout requirements and test long-running and streaming requests. |
+
+The target gateway extension also defines a bootstrap hook for rollback. Restoring a chart can depend on Agent Manager being reachable; include that dependency in recovery testing.
+
+## 1. Select versions and inventory the installation
+
+Use Helm 3.14 or later within Helm 3 for `--reset-then-reuse-values`. The target source recommends Helm 3.19.4. Confirm access to each relevant Kubernetes context and registry.
+
+```bash
+export VERSION="0.0.0-dev"
+export REG="oci://ghcr.io/wso2"
+export AMP_NS="wso2-amp"
+export DP_NS="openchoreo-data-plane"
+export GW_VERSION="2026.09.24"
+export GW_OPERATOR_VERSION="0.11.3"
+
+helm version
+kubectl config current-context
+helm list -A
+kubectl get apigateways -A
+```
+
+For development testing, replace `VERSION` with the exact immutable snapshot being tested. Do not use a moving development tag as evidence for a specific snapshot. Gateway and gateway-operator versions are independent of the Agent Manager version; confirm these pins for the target build before proceeding.
+
+For subscription installations, use the registry and credentials assigned to your subscription and confirm all required target charts and images are available there. The commands below show the community registry path.
+
+Record the Helm release and namespace for the main platform, Thunder, platform resources, observability, evaluation, gateway operator, and every gateway extension. Also record the controller Deployment, container, PVC, and mount path for each gateway; do not assume a namespace contains only one matching Deployment.
+
+## 2. Back up and establish a baseline
+
+Pause deployments, promotions, credential changes, and other configuration writes for the maintenance window. Plan for interruption during gateway rollout and verify the actual impact in staging; continued traffic is not guaranteed.
+
+Save each release's history and user-supplied values in a restricted directory:
+
+```bash
+umask 077
+mkdir -p upgrade-backup
+helm history amp -n "$AMP_NS" > upgrade-backup/amp-history.txt
+helm get values amp -n "$AMP_NS" -o yaml > upgrade-backup/amp-user-values.yaml
+```
+
+Repeat for the other installed releases. These files can contain credentials; keep them out of source control and issue attachments. Preserve encryption keys and database credentials using your normal protected backup process.
+
+Back up PostgreSQL using a method appropriate to your deployment. For the quick-start PostgreSQL instance:
+
+```bash
+kubectl exec -n "$AMP_NS" amp-postgresql-0 -- \
+  pg_dump -U agentmanager -d agentmanager -Fc \
+  > upgrade-backup/ams-1.0.0.dump
+```
+
+For an external database, use its configured connection and backup tooling. Check command success and validate restoration in a separate database before relying on the backup.
+
+Back up each gateway controller's persistent data using a consistent volume snapshot or an approved quiesced backup procedure. Copying an actively changing SQLite database and its WAL files is not, by itself, a verified recovery backup. Preserve the encryption-key Secret as well as the database. Version 4 database backups are for recovery with the old gateway, not for loading into the new gateway.
+
+Record agents, providers, MCP proxies, monitors, historical trace IDs, and environment mappings. Invoke representative agents and record monitor results before changing versions.
+
+## 3. Prepare Helm values
+
+Compare saved overrides with the target chart values. `--reset-then-reuse-values` picks up new defaults while retaining user overrides, including any explicitly pinned old image tags. Update those pins deliberately and inspect the rendered images.
+
+For each gateway extension, export user values and edit a copy:
+
+```bash
+export GW_NS="default-default"
+export GW_RELEASE="api-platform-default-default"
+helm get values "$GW_RELEASE" -n "$GW_NS" -o yaml \
+  > upgrade-backup/gateway-user-values.yaml
+cp upgrade-backup/gateway-user-values.yaml gateway-target-values.yaml
+```
+
+Remove `apiGateway.config.systemEnv` from `gateway-target-values.yaml`. Move non-secret system parameters into the root of `apiGateway.config.config_toml`. Inject secrets through environment interpolation and `systemExtraEnv` references to existing Kubernetes Secrets. For example:
+
+```yaml
+apiGateway:
+  config:
+    config_toml: |
+      azurecontentsafety_endpoint = "https://your-resource.example"
+      azurecontentsafety_key = '{{ env "APIP_GW_AZURECONTENTSAFETY_KEY" }}'
+    systemExtraEnv:
+      - name: APIP_GW_AZURECONTENTSAFETY_KEY
+        valueFrom:
+          secretKeyRef:
+            name: azure-content-safety
+            key: subscription-key
+```
+
+Adapt this example to the policies actually configured. `config_toml` is written to a ConfigMap, so do not put secret values in it. Do not redefine TOML tables already generated by the chart. Ensure referenced Secrets exist in the appropriate gateway namespace.
+
+Render the target chart with the complete edited override file and review it in a protected location. In the gateway-extension upgrade below, `--reset-values -f` deliberately avoids carrying the removed setting back from the old release. Maintain a separate file for each gateway.
+
+## 4. Upgrade OpenChoreo and identity dependencies
+
+Complete the [platform dependency migration](./platform-dependencies.mdx): inventory all Helm releases, back up OpenChoreo and identity data, upgrade the four OpenChoreo planes to 1.2.8, and upgrade platform and environment ThunderID instances to 1.0.1. The dependency guide includes the chart/version matrix and readiness checks.
+
+The standard v1.0.0 installer already uses OpenChoreo 1.2.0. For that installation this is a patch transition, not the v1.1-to-v1.2 project migration. Determine the installed version before choosing the path. Keep Gateway Operator at its existing version until the coordinated gateway migration below.
+
+## 5. Upgrade platform resources and Agent Manager
+
+:::caution Ordering requires validation
+The published installation guide requires platform resources at or before Agent Manager to preserve invocation URL behavior. The initial migration notes put Agent Manager before the extensions. The sequence below follows the published ordering while retaining the requirement that Agent Manager be upgraded before the gateway resynchronizes. Validate this combined sequence against the target snapshot before execution outside a disposable test installation.
+:::
+
+```bash
+helm upgrade amp-platform-resources \
+  "$REG/wso2-amp-platform-resources-extension" \
+  --version "$VERSION" -n default \
+  --reset-then-reuse-values --timeout 15m --wait
+
+helm upgrade amp "$REG/wso2-agent-manager" \
+  --version "$VERSION" -n "$AMP_NS" \
+  --reset-then-reuse-values --timeout 15m --wait
+```
+
+The `amp-db-migration` post-upgrade hook applies pending database migrations when migration is enabled. Capture its logs promptly; the chart sets a 300-second cleanup TTL after the job finishes.
+
+```bash
+kubectl logs -n "$AMP_NS" job/amp-db-migration
+kubectl exec -n "$AMP_NS" amp-postgresql-0 -- \
+  psql -U agentmanager -d agentmanager \
+  -c 'select id from migration_history order by id;'
+```
+
+Verify all required entries through 0050 are present, not just the maximum ID. Confirm the API is healthy before proceeding. A missing job after its TTL is not evidence that the migration failed; use captured logs and migration history. If the upgrade fails, inspect both Helm status and migration history before choosing recovery or retry.
+
+## 6. Upgrade remaining installed extensions
+
+Skip only extensions that are not installed. Substitute the namespaces discovered in step 1.
+
+```bash
+helm upgrade amp-observability-traces "$REG/wso2-amp-observability-extension" \
+  --version "$VERSION" -n openchoreo-observability-plane \
+  --reset-then-reuse-values --timeout 15m --wait
+
+helm upgrade amp-evaluation-extension "$REG/wso2-amp-evaluation-extension" \
+  --version "$VERSION" -n openchoreo-workflow-plane \
+  --reset-then-reuse-values --timeout 15m --wait
+```
+
+Platform Thunder and platform resources were upgraded in the preceding stages. Check each remaining release before proceeding and reconcile every installed chart against the dependency matrix.
+
+## 7. Migrate gateway controller state and upgrade the gateways
+
+:::danger Destructive state migration — validation pending
+The initial migration notes require resetting each gateway controller's SQLite database because the new gateway rejects schema version 4. This removes local controller state. Confirm backups, encryption keys, successful Agent Manager upgrade, and the set of data that Agent Manager can reconstruct before proceeding. The exact controller quiesce/reset/rollout procedure must be validated with the gateway owner for the target snapshot.
+:::
+
+For every gateway recorded in step 1:
+
+1. Confirm its controller Deployment, container, persistent volume, and database path.
+2. Complete a consistent backup and prevent the old controller from writing or recreating the old database during the transition. Account for operator reconciliation.
+3. Under the validated reset procedure, remove only `gateway.db`, `gateway.db-wal`, and `gateway.db-shm` from the controller's `/app/data` mount. Preserve encryption keys and unrelated files. Do not delete an entire PVC as a general troubleshooting step.
+4. Prepare Gateway Operator 0.11.3 CRDs using the [operator CRD procedure](./platform-dependencies.mdx#gateway-operator-crds). Review compatibility with the currently running operator before applying schema changes.
+5. Coordinate the operator change below: it can roll all APIGateway resources managed by that operator, so all affected gateways must be prepared before it is applied.
+
+```bash
+helm upgrade gateway-operator \
+  oci://ghcr.io/wso2/api-platform/helm-charts/gateway-operator \
+  --version "$GW_OPERATOR_VERSION" -n "$DP_NS" \
+  --kube-context "$GATEWAY_CONTEXT" --reset-then-reuse-values \
+  --set-string gateway.helm.chartVersion="$GW_VERSION" \
+  --set-string gateway.values.gateway.controller.image.tag="$GW_VERSION" \
+  --set-string gateway.values.gateway.gatewayRuntime.image.tag="$GW_VERSION" \
+  --timeout 15m --wait
+```
+
+This upgrades the operator chart to 0.11.3 as well as pinning its managed gateway chart and images. Review the new operator defaults and any explicitly pinned operator image. Both gateway image overrides are explicit; changing only the gateway chart version can leave old images selected. Helm completion for the operator does not prove that every managed gateway is ready.
+
+Upgrade each gateway extension with its complete, migrated user values:
+
+```bash
+helm upgrade "$GW_RELEASE" \
+  "$REG/wso2-amp-api-platform-gateway-extension" \
+  --version "$VERSION" -n "$GW_NS" \
+  --reset-values -f gateway-target-values.yaml \
+  --timeout 15m --wait
+```
+
+Verify the controller starts with schema version 5, registers with Agent Manager, and resynchronizes deployments, LLM/MCP proxy configuration, and API keys. Check every gateway individually before reopening configuration changes or traffic.
+
+## 8. Verify existing workloads
+
+| Check | Expected result |
+| --- | --- |
+| OpenChoreo planes | All installed planes use chart 1.2.8; controllers and cluster agents are healthy, and projects and release bindings reconcile. |
+| Platform and environment Thunder | Every required instance uses ThunderID 1.0.1; login, token refresh, existing clients, issuer/JWKS trust, and agent credentials work. |
+| Gateway Operator | Chart 0.11.3 is installed, CRDs are compatible, and all managed gateways reconcile. |
+| Agent Manager migration history | Migrations 0044–0050 are present. |
+| Platform charts and component images | Match the selected target; no unintended v1.0.0 image overrides remain. Dependency images retain their independent versions. |
+| Gateway controller and runtime | Both use the confirmed gateway version; controller reports schema 5. |
+| APIGateway conditions | Each affected gateway reports `Programmed=True`. |
+| Console gateway status | Each expected gateway is listed and active. |
+| Resources | Agents, providers, MCP proxies, monitors, and environment mappings match the baseline. |
+| Invocation and authorization | Existing agents respond; LLM/MCP calls and existing API keys work; unauthorized requests remain rejected. |
+| Deployment and promotion | An existing agent rebuilds, redeploys, and promotes successfully; previously promoted agents remain usable. |
+| Observability and evaluation | Historical traces remain visible; new traces arrive; existing monitors complete runs. |
+| Configuration changes | Migrated policies work, secret values are not exposed, and request timeout behavior meets requirements. |
+
+Record the exact snapshot or release, environment, evidence, and issues for each check. Do not mark the upgrade complete solely because Helm reported success.
+
+## Troubleshooting
+
+| Symptom | Next action |
+| --- | --- |
+| Controller reports unsupported schema version 4 | Stop repeated restarts and inspect the reset/rollout sequence. The old database may have survived or been recreated. Use the validated recovery procedure; do not patch an arbitrary container or delete an unidentified PVC. |
+| Migration hook fails | Capture logs before cleanup. Check database connectivity, credentials, and migration history. Confirm the database state before retrying the upgrade. |
+| Old Agent Manager images remain | Inspect explicitly supplied image overrides and the rendered target chart. New chart defaults cannot replace an explicit old override. |
+| Gateway extension fails to render | Remove `systemEnv` from the complete target override file and verify `config_toml` and Secret references. |
+| Gateway images remain old | Check the operator's chart version and both controller/runtime image overrides. |
+| Gateway reports a volume multi-attach error | Inspect old/new controller pods, rollout strategy, and volume attachment. Resolve the writer/attachment conflict without deleting persistent data. |
+| Routes or keys do not recover | Check controller registration, control-plane connectivity, authentication, and synchronization logs. Keep the upgrade open until the baseline traffic checks pass. |
+
+## Recovery to v1.0.0
+
+There is no chart-only downgrade after the database migration. Keep the installation in maintenance mode and stop writes before restoring state.
+
+Use a recovery procedure rehearsed in staging to restore the pre-upgrade PostgreSQL backup, matching v1.0.0 charts and values, OpenChoreo controllers and CRD/resource state, platform and environment Thunder data and trust configuration, old gateway operator/chart/image pins, controller state, and encryption keys. Preserve logs and a copy of the failed state before restoration. Database restoration can discard writes made after the backup; determine that impact before proceeding.
+
+Do not run the old application against the migrated database or restore a schema-4 controller database into the new gateway. Coordinate controller reconciliation during recovery. The gateway extension rollback hook may require a reachable Agent Manager; do not bypass hooks without understanding the bootstrap state they maintain.
+
+Repeat the baseline invocation, credential, trace, monitor, deployment, and promotion checks before resuming service.
