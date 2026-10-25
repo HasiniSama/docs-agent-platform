@@ -13,7 +13,7 @@ This guide upgrades an existing WSO2 Agent Manager v1.0.0 Helm installation. The
 | OpenChoreo moves from 1.2.0 to 1.2.8 | The CRDs are unchanged. A Helm upgrade of the Control Plane and Observability Plane reverts the service-account `client_id` entitlement patch. | Upgrade the four planes and re-apply the patch, as described in [Upgrade platform dependencies](./platform-dependencies.mdx). |
 | ThunderID moves from 1.0.0 to 1.0.1 | Platform Thunder and each environment Thunder are separate releases. | Upgrade each instance separately. |
 | Gateway Operator moves from chart 0.11.0 to 0.11.3 | Only the `llmprovidertemplates` CRD changes. Upgrading the operator does not redeploy existing gateways. | Apply the CRDs, upgrade the operator, and then trigger each gateway explicitly (Step 7). |
-| API Platform gateway moves from images 1.2.1 to 2026.09.24 | The gateway controller's SQLite schema moves from version 4 to 5 with no in-place migration. The new controller refuses a version 4 database. | Delete each controller database immediately before its gateway redeploys, then make the Gateway Operator push each agent's `RestApi` again (Step 7). |
+| API Platform gateway moves from images 1.2.1 to 2026.09.24 | The gateway controller's SQLite schema moves from version 4 to 5, and the new controller refuses a version 4 database. Agent Manager does not resend gateway configuration to an empty controller. | Upgrade each controller database in place before its gateway redeploys (Step 7). Do not delete it. |
 | The Agent Manager database moves from migration 0043 to 0050 | Migrations 0044 to 0050 run in one transaction. v1.0.0 refuses to start against a database that contains them. | Back up PostgreSQL first. A chart rollback alone cannot restore v1.0.0. |
 | The gateway catch-all route request timeout moves from 30 seconds to unlimited | Long-running and streaming requests are no longer cut off at 30 seconds. The gateway's 5-minute idle timeout still applies. | Review any client behavior that relied on the 30-second limit. |
 | The platform Thunder bootstrap runs only at install time | The target adds a refresh-token lifetime and login-screen branding to the Console, CLI, and MCP clients. An upgrade does not apply these to existing clients. | Existing clients keep their v1.0.0 settings. |
@@ -23,7 +23,8 @@ This guide upgrades an existing WSO2 Agent Manager v1.0.0 Helm installation. The
 - Helm 3.14 or later, for `--reset-then-reuse-values`. The target installer uses Helm 3.19.4.
 - `kubectl` access to every cluster that runs an Agent Manager component.
 - Access to the chart registry. For a subscription installation, use the registry and credentials assigned to your subscription.
-- A maintenance window. Expect each gateway to return `404` for agent routes from its redeploy until its `RestApi` resources are pushed again.
+- `sqlite3` on the machine where you run the commands.
+- A maintenance window. Each gateway is unavailable while its controller is stopped and redeployed.
 
 ## Step 1: Set variables and record the installation
 
@@ -71,7 +72,7 @@ kubectl exec -n "$AMP_NS" amp-postgresql-0 -- env PGPASSWORD="$PGPW" \
 
 Check that the dump file is not empty. For an external database, use its own backup tooling. Test the restore in a separate database.
 
-For each gateway, back up the controller data and its encryption key Secret. The key is mounted from the `gateway-encryption-keys` Secret, not stored on the volume. The data backup can restore the old 1.2.1 controller only. The new controller cannot read it.
+For each gateway, back up the controller data and its encryption key Secret. The key is mounted from the `gateway-encryption-keys` Secret, not stored on the volume. This backup is the recovery point for the 1.2.1 controller.
 
 ```bash
 export GW_NS="default-default"
@@ -164,26 +165,79 @@ helm upgrade gateway-operator \
 
 Chart 0.11.3 runs operator image 0.11.1. Existing gateways keep running 1.2.1 after this step.
 
-## Step 7: Reset each controller database and redeploy its gateway
+## Step 7: Upgrade each controller database in place and redeploy its gateway
 
-The operator redeploys an APIGateway only when its spec changes. For each gateway, delete the controller database and then change the spec, with no pause between the two commands. The running 1.2.1 controller keeps its open file until its pod stops. The extension sets the controller's rollout strategy to `Recreate`, so the new controller starts on an empty volume and creates a version 5 database.
+The 2026.09.24 controller refuses a version 4 database, and Agent Manager does not resend routes, LLM providers, LLM proxies, or MCP proxies to an empty controller. Upgrade each existing database in place instead. The only schema change between version 4 and version 5 is a new `agents` table, so the upgrade adds that table and sets the schema version. Run this step for one gateway at a time. You need `sqlite3` on the machine where you run the commands.
 
 :::danger
-This deletes the controller's local state. Confirm the Step 2 backups and the Step 4 migration before you continue. Delete only these three files, and keep the encryption key Secret.
+Confirm the Step 2 backups and the Step 4 migration before you continue. Keep the `gateway-encryption-keys` Secret. Without it, the controller cannot decrypt the stored secrets.
 :::
 
+Set the gateway to work on:
+
 ```bash
+export GW_NS="default-default"
 export GW_NAME="api-platform-default-default"
+export GW_DIR="upgrade-backup/gw-$GW_NS"
+mkdir -p "$GW_DIR"
 GWC=$(kubectl --context "$GATEWAY_CONTEXT" get deploy -n "$GW_NS" -o name | grep gateway-controller)
+```
 
-kubectl --context "$GATEWAY_CONTEXT" exec -n "$GW_NS" "$GWC" -- rm -f \
-  /app/data/gateway.db /app/data/gateway.db-wal /app/data/gateway.db-shm
+Stop the controller process while keeping its pod and volume. The override replaces the controller command with `sleep`, so nothing writes to the database:
 
+```bash
+kubectl --context "$GATEWAY_CONTEXT" patch -n "$GW_NS" "$GWC" --type=json -p \
+  '[{"op":"add","path":"/spec/template/spec/containers/0/command","value":["sh","-c","sleep 86400"]}]'
+kubectl --context "$GATEWAY_CONTEXT" get pods -n "$GW_NS" -w | grep gateway-controller
+```
+
+Stop watching once a single controller pod is `Running`. It stays `0/1` ready because the controller is not running. Copy the database out of that pod:
+
+```bash
+POD=$(kubectl --context "$GATEWAY_CONTEXT" get pods -n "$GW_NS" --no-headers \
+  | awk '/gateway-controller/ && $3=="Running"{print $1}')
+kubectl --context "$GATEWAY_CONTEXT" exec -n "$GW_NS" "$POD" -c gateway-controller -- ps
+kubectl --context "$GATEWAY_CONTEXT" exec -n "$GW_NS" "$POD" -c gateway-controller -- \
+  sh -c 'cd /app/data && tar cf - gateway.db*' > "$GW_DIR/gateway-v4.tar"
+```
+
+The `ps` output lists `sleep` and no `gateway-controller` process. Upgrade the copy to version 5:
+
+```bash
+tar xf "$GW_DIR/gateway-v4.tar" -C "$GW_DIR"
+sqlite3 "$GW_DIR/gateway.db" 'PRAGMA wal_checkpoint(TRUNCATE);'
+sqlite3 "$GW_DIR/gateway.db" <<'SQL'
+CREATE TABLE IF NOT EXISTS agents (
+    uuid TEXT NOT NULL,
+    gateway_id TEXT NOT NULL,
+    configuration TEXT NOT NULL,
+    signed_public_card TEXT,
+    signed_protected_card TEXT,
+    PRIMARY KEY (gateway_id, uuid),
+    FOREIGN KEY(gateway_id, uuid) REFERENCES artifacts(gateway_id, uuid) ON DELETE CASCADE
+);
+PRAGMA user_version = 5;
+SQL
+sqlite3 "$GW_DIR/gateway.db" 'PRAGMA user_version; PRAGMA integrity_check; SELECT kind, handle FROM artifacts;'
+```
+
+The output shows `5`, `ok`, and the routes, LLM providers, LLM proxies, and MCP proxies on this gateway. Replace the database in the pod with the upgraded copy:
+
+```bash
+kubectl --context "$GATEWAY_CONTEXT" exec -n "$GW_NS" "$POD" -c gateway-controller -- \
+  rm -f /app/data/gateway.db /app/data/gateway.db-wal /app/data/gateway.db-shm
+kubectl --context "$GATEWAY_CONTEXT" exec -i -n "$GW_NS" "$POD" -c gateway-controller -- \
+  sh -c 'cat > /app/data/gateway.db' < "$GW_DIR/gateway.db"
+```
+
+Remove the override and redeploy the gateway, with no pause between the two commands. The operator redeploys an APIGateway only when its spec changes, so the second command changes `spec.infrastructure.annotations`. Until the redeploy replaces it, the 1.2.1 controller restarts and refuses the version 5 database without changing it.
+
+```bash
+kubectl --context "$GATEWAY_CONTEXT" patch -n "$GW_NS" "$GWC" --type=json -p \
+  '[{"op":"remove","path":"/spec/template/spec/containers/0/command"}]'
 kubectl --context "$GATEWAY_CONTEXT" patch apigateway "$GW_NAME" -n "$GW_NS" --type=merge -p \
   "{\"spec\":{\"infrastructure\":{\"annotations\":{\"upgrade.amp.wso2.com/gateway-version\":\"$GW_VERSION\"}}}}"
 ```
-
-The operator passes `spec.infrastructure.annotations` to the gateway resources as common annotations. The patch only changes the spec, which triggers the redeploy.
 
 Wait until the gateway reports the new generation as programmed:
 
@@ -196,36 +250,11 @@ Repeat until the first two numbers match and the status is `True`. Then check th
 
 ```bash
 kubectl --context "$GATEWAY_CONTEXT" get pods -n "$GW_NS" -o jsonpath='{..image}' | tr ' ' '\n' | sort -u
-kubectl --context "$GATEWAY_CONTEXT" logs -n "$GW_NS" "$GWC" | grep -E 'Initializing database schema|Control plane connection established|Deployment sync completed'
+kubectl --context "$GATEWAY_CONTEXT" logs -n "$GW_NS" "$GWC" \
+  | grep -E 'Database schema up to date|Loaded configurations|Loaded API keys|Control plane connection established'
 ```
 
-The images are `gateway-controller:2026.09.24` and `gateway-runtime:2026.09.24`, and all three log lines appear.
-
-### Restore the gateway's agent routes
-
-The new controller starts with no agent routes. Agent Manager does not resend them: the gateway's deployment sync returns an empty list, because each agent's route is stored as a `RestApi` resource that the Gateway Operator pushes to the gateway. The operator still marks those resources as deployed, so it does not push them to the new controller on its own.
-
-Force the operator to push every `RestApi` that targets this gateway again. The temporary annotation value makes the operator detect a changed fingerprint and redeploy. The operator then writes the correct value back.
-
-```bash
-kubectl --context "$GATEWAY_CONTEXT" get restapis -A \
-  -l "gateway.api-platform.wso2.com/restapi-target=$GW_NAME" \
-  -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
-  | while read -r ns name; do
-      kubectl --context "$GATEWAY_CONTEXT" annotate restapi "$name" -n "$ns" \
-        gateway.api-platform.wso2.com/policy-valuefrom-fingerprint=force-resync --overwrite
-    done
-```
-
-Check that the operator redeployed each one. No resource keeps the `force-resync` value:
-
-```bash
-kubectl --context "$GATEWAY_CONTEXT" get restapis -A \
-  -l "gateway.api-platform.wso2.com/restapi-target=$GW_NAME" \
-  -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name,FINGERPRINT:.metadata.annotations.gateway\.api-platform\.wso2\.com/policy-valuefrom-fingerprint'
-```
-
-Invoke one agent through this gateway before you start the next gateway.
+The images are `gateway-controller:2026.09.24` and `gateway-runtime:2026.09.24`. The logs show schema version 5 and the same number of configurations and API keys as before the upgrade. Invoke one agent through this gateway before you start the next gateway.
 
 ## Step 8: Verify existing workloads
 
@@ -247,24 +276,14 @@ Do not mark the upgrade complete because Helm reported success.
 
 | Symptom | Cause and action |
 | --- | --- |
-| The controller crash-loops with `unsupported schema version 4, expected 5; delete the database to recreate` | The old database survived, or the old controller recreated it before the rollout. The pod exits too quickly for `kubectl exec`. Override its command once to clear the database, then remove the override. See the commands after this table. |
+| The controller crash-loops with `unsupported schema version 4, expected 5; delete the database to recreate` | The gateway redeployed before its database was upgraded. Do not delete the database. Run Step 7 from the command override onwards: the override stops the crash loop, and the in-place upgrade makes the database readable. |
 | Gateway images stay at 1.2.1 | The operator did not redeploy the gateway. Check `helm get values gateway-operator -n "$DP_NS"` for both image tags, then repeat the Step 7 patch with a new annotation value. |
-| Agent invocations return `404 {"error":"Not Found"}`, which the Console reports as a CORS error | The gateway has no route for the agent. The Gateway Operator did not push the agent's `RestApi` to the new controller. Run the commands in [Restore the gateway's agent routes](#restore-the-gateways-agent-routes) for that gateway. |
-| Gateway logs show `artifact not found for UUID` for API key events | The API the key belongs to is not deployed to the new controller. Restore the gateway's agent routes, then invoke an agent with an existing API key. |
+| Agent invocations return `404 {"error":"Not Found"}`, which the Console reports as a CORS error, or an agent's LLM calls return `404` | The controller started with an empty database, so it has no routes, LLM providers, LLM proxies, or MCP proxies. Restore the gateway's Step 2 backup into its controller and upgrade it in place as in Step 7. |
+| Agent invocations return `401 Valid API key required` after a restore | The API key was created or regenerated after the backup you restored. Regenerate the key in the Console. |
 | APIGateway reports `Multi-Attach error for volume` | The old and new controller pods are on different nodes. Check that the controller Deployment uses the `Recreate` strategy, and delete the old controller pod. |
 | Migration job fails | Read the job logs before the 300-second cleanup. Fix the cause and rerun `helm upgrade amp`. The database stays at `0043`. |
 | Agent Manager images remain at v1.0.0 | An explicit image tag override in your values pins the old version. Remove it and rerun the upgrade. |
 | OpenChoreo calls return empty lists or `403` | The plane upgrade reverted the `client_id` entitlement patch. Re-apply it as described in [Upgrade platform dependencies](./platform-dependencies.mdx). |
-
-To clear a controller database when the pod crash-loops:
-
-```bash
-kubectl --context "$GATEWAY_CONTEXT" patch -n "$GW_NS" "$GWC" --type=json -p \
-  '[{"op":"add","path":"/spec/template/spec/containers/0/command","value":["sh","-c","rm -f /app/data/gateway.db*; sleep 3600"]}]'
-kubectl --context "$GATEWAY_CONTEXT" rollout status -n "$GW_NS" "$GWC"
-kubectl --context "$GATEWAY_CONTEXT" patch -n "$GW_NS" "$GWC" --type=json -p \
-  '[{"op":"remove","path":"/spec/template/spec/containers/0/command"}]'
-```
 
 ## Recovery to v1.0.0
 
