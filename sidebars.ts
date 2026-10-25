@@ -104,6 +104,16 @@ const sidebars: SidebarsConfig = {
           collapsed: true,
           items: [
             {
+              type: 'category',
+              label: 'Upgrades',
+              collapsed: true,
+              link: {type: 'doc', id: 'guides/upgrades/overview'},
+              items: [
+                'guides/upgrades/from-v1-0-0',
+                'guides/upgrades/platform-dependencies',
+              ],
+            },
+            {
               type: 'doc',
               id: 'guides/register-llm-service-provider',
               label: 'LLM Service Providers',
