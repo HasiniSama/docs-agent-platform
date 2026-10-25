@@ -64,15 +64,16 @@ helm get values amp -n "$AMP_NS" -o yaml > upgrade-backup/amp-user-values.yaml
 
 Repeat for the other releases recorded in Step 1.
 
-Back up the Agent Manager database. This dump is the only way back to v1.0.0. For the quick-start PostgreSQL instance:
+Back up the Agent Manager database. This dump is the only way back to v1.0.0. The quick-start PostgreSQL instance requires a password, which is stored in the `amp-postgresql` Secret:
 
 ```bash
-kubectl exec -n "$AMP_NS" amp-postgresql-0 -- \
+export PGPW="$(kubectl get secret amp-postgresql -n "$AMP_NS" -o jsonpath='{.data.password}' | base64 -d)"
+kubectl exec -n "$AMP_NS" amp-postgresql-0 -- env PGPASSWORD="$PGPW" \
   pg_dump -U agentmanager -d agentmanager -Fc \
   > upgrade-backup/ams-1.0.0.dump
 ```
 
-For an external database, use its own backup tooling. Test the restore in a separate database.
+Check that the dump file is not empty. For an external database, use its own backup tooling. Test the restore in a separate database.
 
 For each gateway, back up the controller data and its encryption key Secret. The key is mounted from the `gateway-encryption-keys` Secret, not stored on the volume. The data backup can restore the old 1.2.1 controller only. The new controller cannot read it.
 
@@ -110,7 +111,7 @@ The `amp-db-migration` post-upgrade hook applies migrations 0044 to 0050. Kubern
 
 ```bash
 kubectl logs -n "$AMP_NS" job/amp-db-migration
-kubectl exec -n "$AMP_NS" amp-postgresql-0 -- \
+kubectl exec -n "$AMP_NS" amp-postgresql-0 -- env PGPASSWORD="$PGPW" \
   psql -U agentmanager -d agentmanager -tc \
   "select max(id) from migration_history"
 ```
@@ -250,7 +251,7 @@ There is no chart-only downgrade after the database migration. Keep the installa
 2. Restore the database:
 
    ```bash
-   kubectl exec -i -n "$AMP_NS" amp-postgresql-0 -- \
+   kubectl exec -i -n "$AMP_NS" amp-postgresql-0 -- env PGPASSWORD="$PGPW" \
      pg_restore -U agentmanager -d agentmanager --clean --if-exists \
      < upgrade-backup/ams-1.0.0.dump
    ```
