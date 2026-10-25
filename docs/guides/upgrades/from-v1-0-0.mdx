@@ -183,9 +183,11 @@ mkdir -p "$GW_DIR"
 GWC=$(kubectl --context "$GATEWAY_CONTEXT" get deploy -n "$GW_NS" -o name | grep gateway-controller)
 ```
 
-Stop the controller process while keeping its pod and volume. The override replaces the controller command with `sleep`, so nothing writes to the database:
+Stop the controller process while keeping its pod and volume. The override replaces the controller command with `sleep`, so nothing writes to the database. First confirm that the container does not already set a command, because removing the override later deletes the field. The first command prints nothing:
 
 ```bash
+kubectl --context "$GATEWAY_CONTEXT" get -n "$GW_NS" "$GWC" \
+  -o jsonpath='{.spec.template.spec.containers[0].command}'
 kubectl --context "$GATEWAY_CONTEXT" patch -n "$GW_NS" "$GWC" --type=json -p \
   '[{"op":"add","path":"/spec/template/spec/containers/0/command","value":["sh","-c","sleep 86400"]}]'
 kubectl --context "$GATEWAY_CONTEXT" get pods -n "$GW_NS" -w | grep gateway-controller
@@ -221,13 +223,21 @@ SQL
 sqlite3 "$GW_DIR/gateway.db" 'PRAGMA user_version; PRAGMA integrity_check; SELECT kind, handle FROM artifacts;'
 ```
 
-The output shows `5`, `ok`, and the routes, LLM providers, LLM proxies, and MCP proxies on this gateway. Replace the database in the pod with the upgraded copy:
+The output shows `5`, `ok`, and the routes, LLM providers, LLM proxies, and MCP proxies on this gateway. Copy the upgraded database into the pod next to the old one, and compare checksums:
+
+```bash
+kubectl --context "$GATEWAY_CONTEXT" exec -i -n "$GW_NS" "$POD" -c gateway-controller -- \
+  sh -c 'cat > /app/data/gateway.db.new' < "$GW_DIR/gateway.db"
+shasum -a 256 "$GW_DIR/gateway.db"
+kubectl --context "$GATEWAY_CONTEXT" exec -n "$GW_NS" "$POD" -c gateway-controller -- \
+  sha256sum /app/data/gateway.db.new
+```
+
+If the two checksums differ, repeat the copy. When they match, replace the old database:
 
 ```bash
 kubectl --context "$GATEWAY_CONTEXT" exec -n "$GW_NS" "$POD" -c gateway-controller -- \
-  rm -f /app/data/gateway.db /app/data/gateway.db-wal /app/data/gateway.db-shm
-kubectl --context "$GATEWAY_CONTEXT" exec -i -n "$GW_NS" "$POD" -c gateway-controller -- \
-  sh -c 'cat > /app/data/gateway.db' < "$GW_DIR/gateway.db"
+  sh -c 'rm -f /app/data/gateway.db-wal /app/data/gateway.db-shm && mv /app/data/gateway.db.new /app/data/gateway.db'
 ```
 
 Remove the override and redeploy the gateway, with no pause between the two commands. The operator redeploys an APIGateway only when its spec changes, so the second command changes `spec.infrastructure.annotations`. Until the redeploy replaces it, the 1.2.1 controller restarts and refuses the version 5 database without changing it.
