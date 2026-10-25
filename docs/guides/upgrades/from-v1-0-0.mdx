@@ -13,7 +13,7 @@ This guide upgrades an existing WSO2 Agent Manager v1.0.0 Helm installation. The
 | OpenChoreo moves from 1.2.0 to 1.2.8 | The CRDs are unchanged. A Helm upgrade of the Control Plane and Observability Plane reverts the service-account `client_id` entitlement patch. | Upgrade the four planes and re-apply the patch, as described in [Upgrade platform dependencies](./platform-dependencies.mdx). |
 | ThunderID moves from 1.0.0 to 1.0.1 | Platform Thunder and each environment Thunder are separate releases. | Upgrade each instance separately. |
 | Gateway Operator moves from chart 0.11.0 to 0.11.3 | Only the `llmprovidertemplates` CRD changes. Upgrading the operator does not redeploy existing gateways. | Apply the CRDs, upgrade the operator, and then trigger each gateway explicitly (Step 7). |
-| API Platform gateway moves from images 1.2.1 to 2026.09.24 | The gateway controller's SQLite schema moves from version 4 to 5 with no in-place migration. The new controller refuses a version 4 database. | Delete each controller database immediately before its gateway redeploys. The controller resynchronizes from Agent Manager. |
+| API Platform gateway moves from images 1.2.1 to 2026.09.24 | The gateway controller's SQLite schema moves from version 4 to 5 with no in-place migration. The new controller refuses a version 4 database. | Delete each controller database immediately before its gateway redeploys, then make the Gateway Operator push each agent's `RestApi` again (Step 7). |
 | The Agent Manager database moves from migration 0043 to 0050 | Migrations 0044 to 0050 run in one transaction. v1.0.0 refuses to start against a database that contains them. | Back up PostgreSQL first. A chart rollback alone cannot restore v1.0.0. |
 | The gateway catch-all route request timeout moves from 30 seconds to unlimited | Long-running and streaming requests are no longer cut off at 30 seconds. The gateway's 5-minute idle timeout still applies. | Review any client behavior that relied on the 30-second limit. |
 | The platform Thunder bootstrap runs only at install time | The target adds a refresh-token lifetime and login-screen branding to the Console, CLI, and MCP clients. An upgrade does not apply these to existing clients. | Existing clients keep their v1.0.0 settings. |
@@ -23,7 +23,7 @@ This guide upgrades an existing WSO2 Agent Manager v1.0.0 Helm installation. The
 - Helm 3.14 or later, for `--reset-then-reuse-values`. The target installer uses Helm 3.19.4.
 - `kubectl` access to every cluster that runs an Agent Manager component.
 - Access to the chart registry. For a subscription installation, use the registry and credentials assigned to your subscription.
-- A maintenance window. Expect each gateway to be unavailable while it redeploys and its new controller resynchronizes.
+- A maintenance window. Expect each gateway to return `404` for agent routes from its redeploy until its `RestApi` resources are pushed again.
 
 ## Step 1: Set variables and record the installation
 
@@ -199,7 +199,33 @@ kubectl --context "$GATEWAY_CONTEXT" get pods -n "$GW_NS" -o jsonpath='{..image}
 kubectl --context "$GATEWAY_CONTEXT" logs -n "$GW_NS" "$GWC" | grep -E 'Initializing database schema|Control plane connection established|Deployment sync completed'
 ```
 
-The images are `gateway-controller:2026.09.24` and `gateway-runtime:2026.09.24`, and all three log lines appear. Finish one gateway before you start the next.
+The images are `gateway-controller:2026.09.24` and `gateway-runtime:2026.09.24`, and all three log lines appear.
+
+### Restore the gateway's agent routes
+
+The new controller starts with no agent routes. Agent Manager does not resend them: the gateway's deployment sync returns an empty list, because each agent's route is stored as a `RestApi` resource that the Gateway Operator pushes to the gateway. The operator still marks those resources as deployed, so it does not push them to the new controller on its own.
+
+Force the operator to push every `RestApi` that targets this gateway again. The temporary annotation value makes the operator detect a changed fingerprint and redeploy. The operator then writes the correct value back.
+
+```bash
+kubectl --context "$GATEWAY_CONTEXT" get restapis -A \
+  -l "gateway.api-platform.wso2.com/restapi-target=$GW_NAME" \
+  -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+  | while read -r ns name; do
+      kubectl --context "$GATEWAY_CONTEXT" annotate restapi "$name" -n "$ns" \
+        gateway.api-platform.wso2.com/policy-valuefrom-fingerprint=force-resync --overwrite
+    done
+```
+
+Check that the operator redeployed each one. No resource keeps the `force-resync` value:
+
+```bash
+kubectl --context "$GATEWAY_CONTEXT" get restapis -A \
+  -l "gateway.api-platform.wso2.com/restapi-target=$GW_NAME" \
+  -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name,FINGERPRINT:.metadata.annotations.gateway\.api-platform\.wso2\.com/policy-valuefrom-fingerprint'
+```
+
+Invoke one agent through this gateway before you start the next gateway.
 
 ## Step 8: Verify existing workloads
 
@@ -223,7 +249,8 @@ Do not mark the upgrade complete because Helm reported success.
 | --- | --- |
 | The controller crash-loops with `unsupported schema version 4, expected 5; delete the database to recreate` | The old database survived, or the old controller recreated it before the rollout. The pod exits too quickly for `kubectl exec`. Override its command once to clear the database, then remove the override. See the commands after this table. |
 | Gateway images stay at 1.2.1 | The operator did not redeploy the gateway. Check `helm get values gateway-operator -n "$DP_NS"` for both image tags, then repeat the Step 7 patch with a new annotation value. |
-| Routes or API keys are missing after the reset | The controller syncs deployments from Agent Manager on its first connection only. Reconnects and the polling interval setting do not resync. Check the controller logs for the control plane connection, then restart the controller Deployment to retry. |
+| Agent invocations return `404 {"error":"Not Found"}`, which the Console reports as a CORS error | The gateway has no route for the agent. The Gateway Operator did not push the agent's `RestApi` to the new controller. Run the commands in [Restore the gateway's agent routes](#restore-the-gateways-agent-routes) for that gateway. |
+| Gateway logs show `artifact not found for UUID` for API key events | The API the key belongs to is not deployed to the new controller. Restore the gateway's agent routes, then invoke an agent with an existing API key. |
 | APIGateway reports `Multi-Attach error for volume` | The old and new controller pods are on different nodes. Check that the controller Deployment uses the `Recreate` strategy, and delete the old controller pod. |
 | Migration job fails | Read the job logs before the 300-second cleanup. Fix the cause and rerun `helm upgrade amp`. The database stays at `0043`. |
 | Agent Manager images remain at v1.0.0 | An explicit image tag override in your values pins the old version. Remove it and rerun the upgrade. |
