@@ -106,8 +106,9 @@ const sidebars: SidebarsConfig = {
             {
               type: 'category',
               label: 'Upgrades',
+              collapsed: true,
+              link: {type: 'doc', id: 'guides/upgrades/overview'},
               items: [
-                'guides/upgrades/overview',
                 'guides/upgrades/from-v1-0-0',
                 'guides/upgrades/platform-dependencies',
               ],
