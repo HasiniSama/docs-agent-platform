@@ -42,10 +42,10 @@ export GW_OPERATOR_VERSION="0.11.3"
 
 helm version
 helm list -A
-kubectl get apigateways -A
+kubectl --context "$GATEWAY_CONTEXT" get apigateways -A
 ```
 
-Replace `<gateway-cluster-context>` with the Kubernetes context of the cluster that runs the Gateway Operator. For development testing, set `VERSION` to the exact snapshot under test.
+Replace `<gateway-cluster-context>` with the Kubernetes context of the cluster that runs the Gateway Operator and your gateways. On a single-cluster installation, this is the output of `kubectl config current-context`. For development testing, set `VERSION` to the exact snapshot under test.
 
 Record each Helm release, namespace, chart version, and Kubernetes context. Record every APIGateway with its namespace. The quick-start installer names them `api-platform-<org>-<env>` in the `<org>-<env>` namespace.
 
@@ -78,10 +78,10 @@ For each gateway, back up the controller data and its encryption key Secret. The
 
 ```bash
 export GW_NS="default-default"
-GWC=$(kubectl get deploy -n "$GW_NS" -o name | grep gateway-controller)
-kubectl exec -n "$GW_NS" "$GWC" -- tar cf - -C /app data \
+GWC=$(kubectl --context "$GATEWAY_CONTEXT" get deploy -n "$GW_NS" -o name | grep gateway-controller)
+kubectl --context "$GATEWAY_CONTEXT" exec -n "$GW_NS" "$GWC" -- tar cf - -C /app data \
   > "upgrade-backup/gw-data-$GW_NS.tar"
-kubectl get secret gateway-encryption-keys -n "$GW_NS" -o yaml \
+kubectl --context "$GATEWAY_CONTEXT" get secret gateway-encryption-keys -n "$GW_NS" -o yaml \
   > "upgrade-backup/gw-encryption-keys-$GW_NS.yaml"
 ```
 
@@ -139,7 +139,7 @@ Upgrade each gateway extension release. This does not redeploy the gateway. Its 
 export GW_RELEASE="api-platform-default-default"
 helm upgrade "$GW_RELEASE" \
   "$REG/wso2-amp-api-platform-gateway-extension" \
-  --version "$VERSION" -n "$GW_NS" \
+  --version "$VERSION" -n "$GW_NS" --kube-context "$GATEWAY_CONTEXT" \
   --reset-then-reuse-values --timeout 15m --wait
 ```
 
@@ -177,12 +177,12 @@ This deletes the controller's local state. Confirm the Step 2 backups and the St
 
 ```bash
 export GW_NAME="api-platform-default-default"
-GWC=$(kubectl get deploy -n "$GW_NS" -o name | grep gateway-controller)
+GWC=$(kubectl --context "$GATEWAY_CONTEXT" get deploy -n "$GW_NS" -o name | grep gateway-controller)
 
-kubectl exec -n "$GW_NS" "$GWC" -- rm -f \
+kubectl --context "$GATEWAY_CONTEXT" exec -n "$GW_NS" "$GWC" -- rm -f \
   /app/data/gateway.db /app/data/gateway.db-wal /app/data/gateway.db-shm
 
-kubectl patch apigateway "$GW_NAME" -n "$GW_NS" --type=merge -p \
+kubectl --context "$GATEWAY_CONTEXT" patch apigateway "$GW_NAME" -n "$GW_NS" --type=merge -p \
   "{\"spec\":{\"infrastructure\":{\"annotations\":{\"upgrade.amp.wso2.com/gateway-version\":\"$GW_VERSION\"}}}}"
 ```
 
@@ -191,15 +191,15 @@ The operator passes `spec.infrastructure.annotations` to the gateway resources a
 Wait until the gateway reports the new generation as programmed:
 
 ```bash
-kubectl get apigateway "$GW_NAME" -n "$GW_NS" -o jsonpath=\
+kubectl --context "$GATEWAY_CONTEXT" get apigateway "$GW_NAME" -n "$GW_NS" -o jsonpath=\
 '{.metadata.generation} {.status.conditions[?(@.type=="Programmed")].observedGeneration} {.status.conditions[?(@.type=="Programmed")].status}{"\n"}'
 ```
 
 Repeat until the first two numbers match and the status is `True`. Then check the controller:
 
 ```bash
-kubectl get pods -n "$GW_NS" -o jsonpath='{..image}' | tr ' ' '\n' | sort -u
-kubectl logs -n "$GW_NS" "$GWC" | grep -E 'Initializing database schema|Control plane connection established|Deployment sync completed'
+kubectl --context "$GATEWAY_CONTEXT" get pods -n "$GW_NS" -o jsonpath='{..image}' | tr ' ' '\n' | sort -u
+kubectl --context "$GATEWAY_CONTEXT" logs -n "$GW_NS" "$GWC" | grep -E 'Initializing database schema|Control plane connection established|Deployment sync completed'
 ```
 
 The images are `gateway-controller:2026.09.24` and `gateway-runtime:2026.09.24`, and all three log lines appear. Finish one gateway before you start the next.
@@ -235,10 +235,10 @@ Do not mark the upgrade complete because Helm reported success.
 To clear a controller database when the pod crash-loops:
 
 ```bash
-kubectl patch -n "$GW_NS" "$GWC" --type=json -p \
+kubectl --context "$GATEWAY_CONTEXT" patch -n "$GW_NS" "$GWC" --type=json -p \
   '[{"op":"add","path":"/spec/template/spec/containers/0/command","value":["sh","-c","rm -f /app/data/gateway.db*; sleep 3600"]}]'
-kubectl rollout status -n "$GW_NS" "$GWC"
-kubectl patch -n "$GW_NS" "$GWC" --type=json -p \
+kubectl --context "$GATEWAY_CONTEXT" rollout status -n "$GW_NS" "$GWC"
+kubectl --context "$GATEWAY_CONTEXT" patch -n "$GW_NS" "$GWC" --type=json -p \
   '[{"op":"remove","path":"/spec/template/spec/containers/0/command"}]'
 ```
 
