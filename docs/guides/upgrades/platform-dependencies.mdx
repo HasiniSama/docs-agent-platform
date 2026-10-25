@@ -86,6 +86,8 @@ export OC_REG="oci://ghcr.io/openchoreo/helm-charts"
 export OC_RELEASE="openchoreo-control-plane"
 export OC_NS="openchoreo-control-plane"
 export OC_CONTEXT="<control-plane-context>"
+umask 077
+mkdir -p upgrade-backup
 
 helm get values "$OC_RELEASE" -n "$OC_NS" --kube-context "$OC_CONTEXT" \
   -o yaml > "upgrade-backup/${OC_RELEASE}-user-values.yaml"
@@ -183,6 +185,8 @@ The environment installer mounts the platform CA bundle with a `kubectl patch` a
 export ENV_THUNDER_RELEASE="amp-thunder-default-default"
 export ENV_THUNDER_NS="amp-thunder-default-default"
 export ENV_CONTEXT="<environment-cluster-context>"
+umask 077
+mkdir -p upgrade-backup
 
 helm get values "$ENV_THUNDER_RELEASE" -n "$ENV_THUNDER_NS" \
   --kube-context "$ENV_CONTEXT" -o yaml \
