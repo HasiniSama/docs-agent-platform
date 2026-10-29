@@ -210,7 +210,7 @@ you register. They aren't tied to a first deployment.
 :::info Platform-hosted only
 Building is something Agent Manager does to source it fetched itself. If you
 registered an externally-hosted agent, your process is already running.
-Skip to Step 4.
+Skip to Step 3.
 :::
 After clicking Deploy, you will be redirected to the build page, where the build process will start and display a status of `Running`.
  
@@ -322,7 +322,7 @@ the exact thing Chapter 4 turns into an automated check.
 
 Traces look the same whichever path you took (platform hosted or external).
 What differs is only how the instrumentation got there. Platform-hosted agents
-got it from the init container you left enabled in Step 2; externally-hosted
+got it from the init container you left enabled in Step 1; externally-hosted
 agents got it from the `amp-instrument` prefix. Neither required editing the
 agent's code.
 

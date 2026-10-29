@@ -27,16 +27,16 @@ curl -fsSL https://wso2.github.io/agent-manager/install.sh | sh
 Set `AMCTL_VERSION` to pin a specific version, and `AMCTL_INSTALL_DIR` to change the install location:
 
 ```bash
-curl -fsSL https://wso2.github.io/agent-manager/install.sh | AMCTL_VERSION=0.0.0-dev AMCTL_INSTALL_DIR="$HOME/bin" sh
+curl -fsSL https://wso2.github.io/agent-manager/install.sh | AMCTL_VERSION=2026.11.0 AMCTL_INSTALL_DIR="$HOME/bin" sh
 ```
 :::
 
 ### Windows (x64)
 
-Download the release archive from the [Agent Manager releases page](https://github.com/wso2/agent-manager/releases). The commands below use **`0.0.0-dev`** as an example — replace it with the latest version.
+Download the release archive from the [Agent Manager releases page](https://github.com/wso2/agent-manager/releases). The commands below use **`2026.11.0`** as an example — replace it with the latest version.
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/wso2/agent-manager/releases/download/amp/v0.0.0-dev/amctl_v0.0.0-dev_windows_amd64.zip -OutFile amctl.zip
+Invoke-WebRequest -Uri https://github.com/wso2/agent-manager/releases/download/amp/v2026.11.0/amctl_v2026.11.0_windows_amd64.zip -OutFile amctl.zip
 Expand-Archive amctl.zip -DestinationPath $env:USERPROFILE\amctl
 $env:Path += ";$env:USERPROFILE\amctl"
 ```

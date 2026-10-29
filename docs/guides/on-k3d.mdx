@@ -152,10 +152,13 @@ This phase installs all four with Agent Manager-specific configuration. **Estima
 
 ### Step 0: Download the Release Bundle
 
-Download the release bundle once. Every manifest, values file and script this
-guide applies comes from it, so the install needs no further network access to
-GitHub — which also sidesteps the per-IP rate limiting that makes
-`helm --values <url>` fail with HTTP 429 behind shared or corporate NAT.
+Download the release bundle once. The Agent Manager manifests, values files, and
+scripts this guide applies come from it, so they are not fetched from GitHub
+during the install. That avoids the per-IP rate limiting that makes
+`helm --values <url>` fail with HTTP 429 behind shared or corporate NAT. Two
+files still come from GitHub: the Gateway API CRDs in Step 3 and the container
+registry values in Step 9. The Step 9 `--values` URL is still subject to that
+rate limiting.
 
 ```bash
 export VERSION="0.0.0-dev"

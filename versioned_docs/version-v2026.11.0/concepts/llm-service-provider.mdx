@@ -8,7 +8,7 @@ LLM Service Providers are organization-level resources that represent connection
 
 ## Why Register a Provider Instead of Calling the Model Directly
 
-An agent could hold an api key and call the upstream llm provider url itself. That works until you have more than one agent, and then the problems arrive together. the same credential might be copied into every agent that needs it, rotating it means redeploying all of them, nobody can see how many tokens are being spent or by whom, and there is no place to enforce a limit or a safety policy short of editing agent code.
+An agent could hold an API key and call the upstream LLM provider URL itself. That works until you have more than one agent, and then the problems arrive together: the same credential might be copied into every agent that needs it, rotating it means redeploying all of them, nobody can see how many tokens are being spent or by whom, and there is no place to enforce a limit or a safety policy short of editing agent code.
 
 An LLM Service Provider is the indirection that fixes all of those at once. The upstream credential is stored once, centrally, and never handed to an agent. Agents are given a **gateway URL and a platform-issued API key** instead, so what they actually call is Agent Manager's gateway, which then calls the model on their behalf. Because every request passes through that one point:
 
@@ -52,7 +52,7 @@ Guardrails are content safety policies attached to a provider and enforced by th
 
 They apply at three levels, which stack:
 
-1. **Global guardrails** on the provider which applied to every API resource under it.
+1. **Global guardrails** on the provider apply to every API resource under it.
 2. **Resource-wise guardrails** on the provider are scoped to individual operations, so you can constrain `POST /chat/completions` differently from the rest of the API.
 3. **Agent-level guardrails** on the agent-to-provider binding are attached when a provider is [configured on an agent](../guides/configure-agent-llm-configuration.mdx), and applied **in addition to** the provider's own, so one agent's stricter requirement doesn't have to become everyone's.
 

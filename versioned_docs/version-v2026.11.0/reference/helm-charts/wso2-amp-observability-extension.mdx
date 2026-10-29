@@ -23,7 +23,7 @@ helm install amp-observability-extension oci://ghcr.io/wso2/wso2-amp-observabili
 | `amObserver.replicaCount` | Number of pod replicas to run | integer | `1` |
 | `amObserver.image` | Container image for the observer. | object |  |
 | `amObserver.image.repository` | Container image repository | string | `"ghcr.io/wso2/amp-observer"` |
-| `amObserver.image.tag` | Container image tag. Defaults to the chart's appVersion when empty | string | `"0.0.0-dev"` |
+| `amObserver.image.tag` | Container image tag. Defaults to the chart's appVersion when empty | string | `"2026.11.0"` |
 | `amObserver.image.pullPolicy` | Image pull policy (`Always`, `IfNotPresent`, or `Never`) | string | `"IfNotPresent"` |
 | `amObserver.port` | Port the observer serves its API on. | integer | `9098` |
 | `amObserver.resourceLimits` | Maximum compute resources for the observer container. | object |  |

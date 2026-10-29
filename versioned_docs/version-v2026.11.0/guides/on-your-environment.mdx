@@ -120,7 +120,7 @@ GitHub — which also sidesteps the per-IP rate limiting that makes
 `helm --values <url>` fail with HTTP 429 behind shared or corporate NAT.
 
 ```bash
-export VERSION="0.0.0-dev"
+export VERSION="2026.11.0"
 curl -fsSL -O "https://github.com/wso2/agent-manager/releases/download/amp/v${VERSION}/wso2-agent-manager-${VERSION}.tar.gz"
 tar xzf "wso2-agent-manager-${VERSION}.tar.gz"
 export AMP_DIST="$PWD"
@@ -169,11 +169,11 @@ Nothing to change. The charts come from `ghcr.io/wso2`.
 </TabItem>
 <TabItem value="subscription" label="WSO2 Subscription">
 
-Replace `<version>` and `<project>` with your values from [Install with a WSO2 Subscription](./install-with-a-wso2-subscription.mdx). The version is `0.0.0-dev` for the release, or `0.0.0-dev-u<N>` for update N. Phase 2 uses the same username and token to create the image pull secret.
+Replace `<version>` and `<project>` with your values from [Install with a WSO2 Subscription](./install-with-a-wso2-subscription.mdx). The version is `2026.11.0` for the release, or `2026.11.0-u<N>` for update N. Phase 2 uses the same username and token to create the image pull secret.
 
 ```bash
 export VERSION="<version>"
-export HELM_CHART_REGISTRY="registry.wso2.com/<project>/helm-charts"
+export HELM_CHART_REGISTRY="registry.wso2.com/<project>/sts/helm-charts"
 printf 'Registry username: ' && read -r AMP_REGISTRY_USERNAME
 printf 'Registry token: ' && stty -echo && read -r AMP_REGISTRY_PASSWORD; stty echo; echo
 printf '%s' "$AMP_REGISTRY_PASSWORD" | helm registry login registry.wso2.com --username "$AMP_REGISTRY_USERNAME" --password-stdin

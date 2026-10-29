@@ -205,6 +205,23 @@ update it wherever you exported it.
 </TabItem>
 </Tabs>
 
+## Step 4: Cap the Token Spend
+
+The guardrail controls what the agent says. A rate limit caps how many tokens it
+can spend. In the organization view, open **LLM Service Providers**, select
+`Shared OpenAI`, and go to its **Rate Limiting** tab.
+
+1. On the **Provider Level** tab, leave **Mode** set to **Provider-wide**.
+2. Turn on **Token Count**, then set **Quota (tokens)** to `500000`, **Duration**
+   to `1`, and **Unit** to **Hour(s)**.
+3. Click **Save**.
+
+The gateway now counts the tokens used by every call through this provider,
+across all agents, and rejects calls once the hour's quota is used up. A runaway
+loop stops at the cap instead of draining the month's budget. The quota is sized
+for testing, and [Chapter 5](./promote-your-agent.mdx) revisits it before
+production.
+
 ## Step 5: Prove the Guardrail Works
 
 In **Try It**, ask the question you started with:

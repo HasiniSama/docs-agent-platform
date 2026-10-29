@@ -239,6 +239,10 @@ var endpoint = Environment.GetEnvironmentVariable("AMP_OTEL_ENDPOINT")
     ?? throw new InvalidOperationException("AMP_OTEL_ENDPOINT is not set");
 var apiKey = Environment.GetEnvironmentVariable("AMP_AGENT_API_KEY")
     ?? throw new InvalidOperationException("AMP_AGENT_API_KEY is not set");
+// Capture message content unless AMP_TRACE_CONTENT is "false" (default: capture).
+var traceContent = !string.Equals(
+    Environment.GetEnvironmentVariable("AMP_TRACE_CONTENT"), "false",
+    StringComparison.OrdinalIgnoreCase);
 
 // Exporter -> AMP. Note: when the OTLP Endpoint is set in code (rather than via
 // OTEL_EXPORTER_OTLP_ENDPOINT), the SDK does not append the signal path, so
@@ -257,7 +261,7 @@ Sdk.CreateTracerProviderBuilder()
 // Agent: one UseOpenTelemetry call, same source name.
 AIAgent agent = new ChatClientAgent(chatClient, name: "WeatherAgent", instructions: "...", tools: [...])
     .AsBuilder()
-    .UseOpenTelemetry(sourceName: SourceName, configure: cfg => cfg.EnableSensitiveData = true)
+    .UseOpenTelemetry(sourceName: SourceName, configure: cfg => cfg.EnableSensitiveData = traceContent)
     .Build();
 ```
 

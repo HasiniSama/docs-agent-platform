@@ -182,7 +182,7 @@ X cannot delete LLM provider: it has associated LLM proxies. Please delete all p
   before deleting the provider
 ```
 
-Remove the dependents first. For an agent binding, that is [`amctl agent llm unset`](./agent.mdx).
+Remove the dependents first. For an agent binding, delete the LLM configuration from the agent (see [Managing LLM Configurations](../../guides/configure-agent-llm-configuration.mdx#managing-llm-configurations)), or run `amctl agent llm unset <agent> --name <config>`.
 
 ## See Also
 
