@@ -11,11 +11,11 @@ import TabItem from '@theme/TabItem';
 Set up a production-grade, single-cluster Agent Manager deployment on an existing Kubernetes cluster — AWS EKS, Google GKE, Azure AKS, or any distribution with LoadBalancer support. Each step carries its production configuration inline, so following the guide top to bottom produces a deployment you can put in front of real users. The [Production Reference](#production-reference) at the end is the checklist to audit against, plus the operational concerns that belong to no single step.
 
 :::tip Just want to evaluate?
-The [Quick Start Guide](../get-started/quick-start.mdx) installs everything in a single command using a dev container with k3d, the [k3d guide](./on-k3d.mdx) covers a local cluster install, and the [VM guide](./on-a-vm.mdx) covers a single-machine install. Use this page when you are deploying to a real cluster.
+The [k3d guide](./on-k3d.mdx) installs everything on a local cluster, including with a single command. Use this page when you are deploying to a real cluster.
 :::
 
-:::info WSO2 subscription
-With a WSO2 subscription or evaluation, you install the WSO2-supported build from `registry.wso2.com`. Select the **WSO2 Subscription** tab wherever this guide shows one, and see [Install with a WSO2 Subscription](./install-with-a-wso2-subscription.mdx) for your credentials and registry project.
+:::info WSO2 subscription required
+Agent Manager 2026.11.0 is a short-term support (STS) release, available only with a WSO2 subscription or evaluation. It installs from `registry.wso2.com`. See [Install with a WSO2 Subscription](./install-with-a-wso2-subscription.mdx) for your credentials and registry project.
 :::
 
 :::info Stronger agent isolation tiers
@@ -114,10 +114,11 @@ Pick a base domain you control (a delegated subdomain like `amp.yourdomain.com` 
 
 Concretely: `console`/`api-amp`/`thunder`/`cp` all point at the control-plane gateway — via a single required `*.<base>` wildcard, not four separate records (per-environment Thunder hostnames are created after install and are only reachable through that wildcard) — `traces` points at the observability-plane gateway, and `*.agents.<base>` plus the `agents.<base>` apex point at the data-plane gateway. [Step 10](#step-10-publish-dns-records) lists the exact records once the LoadBalancer addresses exist.
 
-Download the release bundle first. Every manifest, values file and script this
-guide applies comes from it, so the install needs no further network access to
-GitHub — which also sidesteps the per-IP rate limiting that makes
-`helm --values <url>` fail with HTTP 429 behind shared or corporate NAT.
+Download the release bundle first. The Agent Manager manifests, values files, and
+scripts this guide applies come from it, so they are not fetched from GitHub
+during the install. That avoids the per-IP rate limiting that makes
+`helm --values <url>` fail with HTTP 429 behind shared or corporate NAT. The
+Gateway API CRDs in Step 1 still come from GitHub.
 
 ```bash
 export VERSION="2026.11.0"
@@ -126,10 +127,11 @@ tar xzf "wso2-agent-manager-${VERSION}.tar.gz"
 export AMP_DIST="$PWD"
 ```
 
-Then the rest of the configuration:
+Then the rest of the configuration. Replace `<version>` and `<project>` with your values from [Install with a WSO2 Subscription](./install-with-a-wso2-subscription.mdx). The version is `2026.11.0` for the release, or `2026.11.0-u<N>` for update N.
 
 ```bash
-export HELM_CHART_REGISTRY="ghcr.io/wso2"
+export VERSION="<version>"
+export HELM_CHART_REGISTRY="registry.wso2.com/<project>/sts/helm-charts"
 export AMP_NS="wso2-amp"
 export BUILD_CI_NS="openchoreo-workflow-plane"
 export OBSERVABILITY_NS="openchoreo-observability-plane"
@@ -159,28 +161,13 @@ export THUNDER_INTERNAL_URL="http://amp-thunder-extension-service.${THUNDER_NS}.
 export INSTRUMENTATION_URL="http://default-default.gateway.localhost:19080/otel"
 ```
 
-With a WSO2 subscription or evaluation, also point the charts at your registry project and sign Helm in to `registry.wso2.com`:
-
-<Tabs groupId="distribution" queryString>
-<TabItem value="community" label="Community" default>
-
-Nothing to change. The charts come from `ghcr.io/wso2`.
-
-</TabItem>
-<TabItem value="subscription" label="WSO2 Subscription">
-
-Replace `<version>` and `<project>` with your values from [Install with a WSO2 Subscription](./install-with-a-wso2-subscription.mdx). The version is `2026.11.0` for the release, or `2026.11.0-u<N>` for update N. Phase 2 uses the same username and token to create the image pull secret.
+Sign Helm in to `registry.wso2.com` with your registry credentials. Phase 2 uses the same username and token to create the image pull secret.
 
 ```bash
-export VERSION="<version>"
-export HELM_CHART_REGISTRY="registry.wso2.com/<project>/sts/helm-charts"
 printf 'Registry username: ' && read -r AMP_REGISTRY_USERNAME
 printf 'Registry token: ' && stty -echo && read -r AMP_REGISTRY_PASSWORD; stty echo; echo
 printf '%s' "$AMP_REGISTRY_PASSWORD" | helm registry login registry.wso2.com --username "$AMP_REGISTRY_USERNAME" --password-stdin
 ```
-
-</TabItem>
-</Tabs>
 
 :::note Hostname shape
 The certificates below are single-level wildcards (`*.<base>`), so every management hostname must sit directly under the base domain — no second-level names like `api.amp.<base>`.

@@ -22,15 +22,15 @@ This guide upgrades an existing WSO2 Agent Manager v1.0.0 Helm installation. The
 
 - Helm 3.14 or later, for `--reset-then-reuse-values`. The target installer uses Helm 3.19.4.
 - `kubectl` access to every cluster that runs an Agent Manager component.
-- Access to the chart registry. For a subscription installation, use the registry and credentials assigned to your subscription.
+- Registry credentials for `registry.wso2.com`. Agent Manager 2026.11.0 is a short-term support (STS) release, available only with a WSO2 subscription or evaluation. See [Install with a WSO2 Subscription](../install-with-a-wso2-subscription.mdx#get-your-registry-credentials).
 - `sqlite3` on the machine where you run the commands.
 - A maintenance window. Each gateway is unavailable while its controller is stopped and redeployed.
 
 ## Step 1: Set variables and record the installation
 
 ```bash
-export VERSION="2026.11.0"
-export REG="oci://ghcr.io/wso2"
+export VERSION="<version>"
+export REG="oci://registry.wso2.com/<project>/sts/helm-charts"
 export AMP_NS="wso2-amp"
 export DP_NS="openchoreo-data-plane"
 export GATEWAY_CONTEXT="<gateway-cluster-context>"
@@ -42,7 +42,24 @@ helm list -A
 kubectl --context "$GATEWAY_CONTEXT" get apigateways -A
 ```
 
-Replace `<gateway-cluster-context>` with the Kubernetes context of the cluster that runs the Gateway Operator and your gateways. On a single-cluster installation, this is the output of `kubectl config current-context`. For development testing, set `VERSION` to the exact snapshot under test.
+Replace `<version>` and `<project>` with your values from [Install with a WSO2 Subscription](../install-with-a-wso2-subscription.mdx#registry-and-versions). The version is `2026.11.0` for the release, or `2026.11.0-u<N>` for update N. Replace `<gateway-cluster-context>` with the Kubernetes context of the cluster that runs the Gateway Operator and your gateways. On a single-cluster installation, this is the output of `kubectl config current-context`.
+
+Sign Helm in to `registry.wso2.com`. The 2026.11.0 charts pull Agent Manager images with the `wso2-registry-credentials` image pull secret, which a v1.0.0 installation from the community registry does not have, so create or update it in each namespace that runs Agent Manager images:
+
+```bash
+printf 'Registry username: ' && read -r AMP_REGISTRY_USERNAME
+printf 'Registry token: ' && stty -echo && read -r AMP_REGISTRY_PASSWORD; stty echo; echo
+printf '%s' "$AMP_REGISTRY_PASSWORD" | helm registry login registry.wso2.com --username "$AMP_REGISTRY_USERNAME" --password-stdin
+
+for ns in "$AMP_NS" openchoreo-observability-plane workflows-default; do
+  kubectl create secret docker-registry wso2-registry-credentials \
+    --namespace "$ns" \
+    --docker-server=registry.wso2.com \
+    --docker-username="$AMP_REGISTRY_USERNAME" \
+    --docker-password="$AMP_REGISTRY_PASSWORD" \
+    --dry-run=client -o yaml | kubectl apply -f -
+done
+```
 
 Record each Helm release, namespace, chart version, and Kubernetes context. Record every APIGateway with its namespace. The quick-start installer names them `api-platform-<org>-<env>` in the `<org>-<env>` namespace.
 

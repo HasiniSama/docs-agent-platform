@@ -212,7 +212,12 @@ To make a manually instrumented agent's traces filterable:
 
 ### Suppressing prompt and completion content
 
-Prompt and completion content is captured by default. To suppress it, set `TRACELOOP_TRACE_CONTENT=false` in the agent's environment. The variable is read by the Traceloop SDK on the auto path and is documented here for parity — on a fully hand-rolled manual setup that bypasses Traceloop, you control what you put into `gen_ai.input.messages` / `gen_ai.output.messages` directly.
+Prompt and completion content is captured by default. The switch is `AMP_TRACE_CONTENT`, which defaults to `true`. Agent Manager's instrumentation copies its value into the Traceloop SDK's `TRACELOOP_TRACE_CONTENT`, overwriting any value you set for that variable yourself, so set `AMP_TRACE_CONTENT` instead:
+
+- **Externally-hosted agents** run with `amp-instrument`: set `AMP_TRACE_CONTENT=false` in the agent's environment.
+- **Platform-hosted agents** with auto-instrumentation: the platform sets `AMP_TRACE_CONTENT` for every instrumented agent from the `agentManagerService.config.otel.traceContent` value of the [`wso2-agent-manager` Helm chart](../reference/helm-charts/wso2-agent-manager.mdx#agentmanagerservice). Set it to `"false"` to suppress content.
+
+On a fully hand-rolled manual setup that bypasses Traceloop, you control what you put into `gen_ai.input.messages` / `gen_ai.output.messages` directly.
 
 ## Instrumenting .NET agents
 

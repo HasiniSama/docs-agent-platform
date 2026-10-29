@@ -9,34 +9,35 @@ sidebar_position: 3
 This guide installs `amctl`, logs into a running Agent Manager instance, and verifies the setup.
 
 :::info Prerequisites
-You need a reachable Agent Manager instance before logging in. Follow the [Quick Start](../get-started/quick-start.mdx) or [On k3d](./on-k3d.mdx) guide first if you have not installed one. The local install exposes the Agent Manager API at `http://api.amp.localhost:8080`.
+You need a reachable Agent Manager instance before logging in. Follow the [On k3d](./on-k3d.mdx) guide first if you have not installed one. The local install exposes the Agent Manager API at `http://api.amp.localhost:8080`.
 :::
 
 ## Step 1: Install amctl
 
+Agent Manager 2026.11.0 does not publish its own `amctl` build. Use `amctl` 1.0.1.
 
 ### macOS / Linux
 
-Install the latest release with the install script. It detects your platform, verifies the checksum, and installs the binary to `/usr/local/bin` (or `~/.local/bin` if that is not writable):
+Install `amctl` 1.0.1 with the install script. It detects your platform, verifies the checksum, and installs the binary to `/usr/local/bin` (or `~/.local/bin` if that is not writable):
 
 ```bash
-curl -fsSL https://wso2.github.io/agent-manager/install.sh | sh
+curl -fsSL https://wso2.github.io/agent-manager/install.sh | AMCTL_VERSION=1.0.1 sh
 ```
 
 :::tip
-Set `AMCTL_VERSION` to pin a specific version, and `AMCTL_INSTALL_DIR` to change the install location:
+Set `AMCTL_INSTALL_DIR` to change the install location:
 
 ```bash
-curl -fsSL https://wso2.github.io/agent-manager/install.sh | AMCTL_VERSION=2026.11.0 AMCTL_INSTALL_DIR="$HOME/bin" sh
+curl -fsSL https://wso2.github.io/agent-manager/install.sh | AMCTL_VERSION=1.0.1 AMCTL_INSTALL_DIR="$HOME/bin" sh
 ```
 :::
 
 ### Windows (x64)
 
-Download the release archive from the [Agent Manager releases page](https://github.com/wso2/agent-manager/releases). The commands below use **`2026.11.0`** as an example — replace it with the latest version.
+Download the `amctl` 1.0.1 archive from the [Agent Manager releases page](https://github.com/wso2/agent-manager/releases):
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/wso2/agent-manager/releases/download/amp/v2026.11.0/amctl_v2026.11.0_windows_amd64.zip -OutFile amctl.zip
+Invoke-WebRequest -Uri https://github.com/wso2/agent-manager/releases/download/amp/v1.0.1/amctl_v1.0.1_windows_amd64.zip -OutFile amctl.zip
 Expand-Archive amctl.zip -DestinationPath $env:USERPROFILE\amctl
 $env:Path += ";$env:USERPROFILE\amctl"
 ```
@@ -73,8 +74,8 @@ amctl login --url http://api.amp.localhost:8080
 
 | Installation | Password |
 |--------------|----------|
-| [Quick Start](../get-started/quick-start.mdx) or [On a VM](./on-a-vm.mdx) | `admin` |
-| [On k3d](./on-k3d.mdx) or [On Your Environment](./on-your-environment.mdx) | Generated at install time. Retrieve it with the command below. |
+| [On k3d](./on-k3d.mdx) with **Run One Command** | `admin` |
+| [On k3d](./on-k3d.mdx) with **Guided Install**, or [On Your Environment](./on-your-environment.mdx) | Generated at install time. Retrieve it with the command below. |
 
 ```bash
 kubectl get secret amp-admin-credentials -n amp-thunder -o jsonpath='{.data.password}' | base64 -d

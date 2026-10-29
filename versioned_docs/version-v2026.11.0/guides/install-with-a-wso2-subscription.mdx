@@ -5,7 +5,7 @@ description: Install the WSO2-supported build of Agent Manager from registry.wso
 
 # Install with a WSO2 Subscription
 
-A WSO2 subscription, or an evaluation of one, gives you the WSO2-supported build of WSO2 Agent Manager. It is the same platform as the community release, with updates that carry fixes on top of the release. Its Helm charts and images are published to `registry.wso2.com` and signed by WSO2. You install it with the [k3d](./on-k3d.mdx) or [On Your Environment](./on-your-environment.mdx) guide, using the changes on this page.
+WSO2 Agent Manager 2026.11.0 is a short-term support (STS) release, available only with a WSO2 subscription or an evaluation of one. There is no community build of it. WSO2 publishes the release and its updates, which carry fixes on top of it, to `registry.wso2.com` and signs them. You install it with the [k3d](./on-k3d.mdx) or [On Your Environment](./on-your-environment.mdx) guide, using the values on this page.
 
 ## Get Your Registry Credentials
 
@@ -21,17 +21,17 @@ With a WSO2 subscription, get your registry credentials from the WSO2 Customer P
 
 The rest of this page writes the registry project as `<project>`, and calls the username and token your registry credentials.
 
-## What Changes From the Community Install
+## Registry and Versions
 
-| | Community | WSO2 subscription |
-|---|---|---|
-| Helm charts | `oci://ghcr.io/wso2/<chart>` | `oci://registry.wso2.com/<project>/sts/helm-charts/<chart>` |
-| Agent Manager images | `ghcr.io/wso2/<image>` | `registry.wso2.com/<project>/sts/<image>` |
-| Chart version | `2026.11.0` | `2026.11.0` for the release, `2026.11.0-u<N>` for update N |
-| Image tag | `v2026.11.0` | `2026.11.0` for the release, `2026.11.0.<N>` for update N |
-| Credentials | None | Registry username and token |
+| | Value |
+|---|---|
+| Helm charts | `oci://registry.wso2.com/<project>/sts/helm-charts/<chart>` |
+| Agent Manager images | `registry.wso2.com/<project>/sts/<image>` |
+| Chart version | `2026.11.0` for the release, `2026.11.0-u<N>` for update N |
+| Image tag | `2026.11.0` for the release, `2026.11.0.<N>` for update N |
+| Credentials | Registry username and token |
 
-The charts in your project already point at the images in the same project, and they reference an image pull secret named `wso2-registry-credentials`. The `helm install` commands in the guides therefore stay the same. Only the Agent Manager images move. The instrumentation image (`amp-python-instrumentation-provider`) and third-party images, such as OpenChoreo, ThunderID, and cert-manager, still come from their public registries.
+The charts in your project already point at the images in the same project, and they reference an image pull secret named `wso2-registry-credentials`. The instrumentation image (`amp-python-instrumentation-provider`) and third-party images, such as OpenChoreo, ThunderID, and cert-manager, still come from their public registries.
 
 WSO2 publishes the 2026.11.0 release to your project, followed by updates to it. The release is version `2026.11.0`, and update N is version `2026.11.0-u<N>`. For example, update 2 is `2026.11.0-u2`, with chart version `2026.11.0-u2` and image tag `2026.11.0.2`. This page calls either one your version. Install the newest version published to your project, unless WSO2 asks you to install a particular one.
 
@@ -76,9 +76,9 @@ curl -fsSL https://github.com/wso2/agent-manager/releases/download/amp/v2026.11.
 
 The script asks for your registry username and token, and reads the token without echoing it. It then:
 
-1. Checks the same prerequisites as the [community one-command install](./on-k3d.mdx#install).
+1. Checks that Docker is running and that k3d, kubectl, Helm, curl and lsof are installed.
 2. Signs in to `registry.wso2.com` with your credentials and finds your version: the one you named, or the newest published to your project.
-3. Downloads the 2026.11.0 release bundle from GitHub, the same one the community install uses, into `~/.wso2-agent-manager/subscription/<project>/<image tag>/`.
+3. Downloads the 2026.11.0 release bundle from GitHub into `~/.wso2-agent-manager/subscription/<project>/<image tag>/`.
 4. Creates the `amp-local` cluster and installs Agent Manager, pulling every chart and Agent Manager image from your project.
 
 | Option | Description |
@@ -93,14 +93,14 @@ When the install finishes, it prints the Console URL, the admin sign-in, and the
 
 ### Guided Install
 
-Follow the [k3d guide](./on-k3d.mdx) and select the **WSO2 Subscription** tab where it appears:
+Follow the **Guided Install** tab of the [k3d guide](./on-k3d.mdx). These steps use your registry project:
 
 - **Step 5: Configuration Variables** sets the chart version and registry, and signs Helm in to `registry.wso2.com`.
 - **Phase 2** creates the `wso2-registry-credentials` pull secret before Agent Manager is installed.
 
 ## Install on Your Environment
 
-Follow the [On Your Environment](./on-your-environment.mdx) guide and select the **WSO2 Subscription** tab where it appears:
+Follow the [On Your Environment](./on-your-environment.mdx) guide. These steps use your registry project:
 
 - **Plan Your Deployment** sets the chart version and registry, and signs Helm in to `registry.wso2.com`.
 - **Phase 2** creates the `wso2-registry-credentials` pull secret before Agent Manager is installed.
@@ -166,7 +166,7 @@ cosign verify --key cosign.pub registry.wso2.com/<project>/sts/amp-api:<image ta
 cosign verify --key cosign.pub registry.wso2.com/<project>/sts/helm-charts/wso2-agent-manager:<chart version>
 ```
 
-Use the image tag and chart version of your version from [What Changes From the Community Install](#what-changes-from-the-community-install). For update 2, they are `2026.11.0.2` and `2026.11.0-u2`.
+Use the image tag and chart version of your version from [Registry and Versions](#registry-and-versions). For update 2, they are `2026.11.0.2` and `2026.11.0-u2`.
 
 A valid signature prints the verified claims for the image or chart. An error means the artifact was not signed by WSO2 or has changed since it was signed.
 
@@ -174,7 +174,7 @@ A valid signature prints the verified claims for the image or chart. An error me
 
 ### Helm Fails With 401 Unauthorized
 
-Helm is not signed in to `registry.wso2.com`. Run the `helm registry login` command from the **WSO2 Subscription** tab again, and check your [registry credentials](#get-your-registry-credentials).
+Helm is not signed in to `registry.wso2.com`. Run the `helm registry login` command again, from [Step 5: Configuration Variables](./on-k3d.mdx#step-5-configuration-variables) of the k3d guide or [Plan Your Deployment](./on-your-environment.mdx#plan-your-deployment) of the On Your Environment guide, and check your [registry credentials](#get-your-registry-credentials).
 
 ### Agent Manager Pods Stay in ImagePullBackOff
 

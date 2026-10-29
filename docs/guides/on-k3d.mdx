@@ -866,7 +866,7 @@ helm list -A | grep -E 'openchoreo|amp|gateway'
 | **Agent Manager Observer** | [http://traces.amp.localhost:11080](http://traces.amp.localhost:11080) |
 | **OTLP trace ingest (HTTP)** | http://default-default.gateway.localhost:19080/otel |
 
-**Console login:** the username is `admin`; the password was generated at install time. Retrieve it with:
+**Console login:** the username is `admin`. The **Run One Command** installer sets the password to `admin`, and the **Guided Install** generates one at install time. Retrieve either with:
 
 ```bash
 kubectl get secret amp-admin-credentials -n amp-thunder -o jsonpath='{.data.password}' | base64 -d

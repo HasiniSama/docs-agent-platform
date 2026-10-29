@@ -114,10 +114,11 @@ Pick a base domain you control (a delegated subdomain like `amp.yourdomain.com` 
 
 Concretely: `console`/`api-amp`/`thunder`/`cp` all point at the control-plane gateway — via a single required `*.<base>` wildcard, not four separate records (per-environment Thunder hostnames are created after install and are only reachable through that wildcard) — `traces` points at the observability-plane gateway, and `*.agents.<base>` plus the `agents.<base>` apex point at the data-plane gateway. [Step 10](#step-10-publish-dns-records) lists the exact records once the LoadBalancer addresses exist.
 
-Download the release bundle first. Every manifest, values file and script this
-guide applies comes from it, so the install needs no further network access to
-GitHub — which also sidesteps the per-IP rate limiting that makes
-`helm --values <url>` fail with HTTP 429 behind shared or corporate NAT.
+Download the release bundle first. The Agent Manager manifests, values files, and
+scripts this guide applies come from it, so they are not fetched from GitHub
+during the install. That avoids the per-IP rate limiting that makes
+`helm --values <url>` fail with HTTP 429 behind shared or corporate NAT. The
+Gateway API CRDs in Step 1 still come from GitHub.
 
 ```bash
 export VERSION="0.0.0-dev"

@@ -73,8 +73,8 @@ amctl login --url http://api.amp.localhost:8080
 
 | Installation | Password |
 |--------------|----------|
-| [Quick Start](../get-started/quick-start.mdx) or [On a VM](./on-a-vm.mdx) | `admin` |
-| [On k3d](./on-k3d.mdx) or [On Your Environment](./on-your-environment.mdx) | Generated at install time. Retrieve it with the command below. |
+| [Quick Start](../get-started/quick-start.mdx), [On a VM](./on-a-vm.mdx), or [On k3d](./on-k3d.mdx) with **Run One Command** | `admin` |
+| [On k3d](./on-k3d.mdx) with **Guided Install**, or [On Your Environment](./on-your-environment.mdx) | Generated at install time. Retrieve it with the command below. |
 
 ```bash
 kubectl get secret amp-admin-credentials -n amp-thunder -o jsonpath='{.data.password}' | base64 -d

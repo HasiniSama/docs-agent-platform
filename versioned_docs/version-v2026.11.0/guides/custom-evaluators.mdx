@@ -11,7 +11,7 @@ This guide walks you through creating custom evaluators in the AMP Console. Cust
 
 ## Prerequisites
 
-- A running AMP instance (see [Quick Start](../get-started/quick-start.mdx))
+- A running AMP instance (see [On k3d](./on-k3d.mdx))
 - An agent registered in AMP with an active environment
 - Familiarity with [evaluation concepts](../concepts/evaluation.mdx), especially evaluator types and evaluation levels
 - For LLM judge evaluators: an API key for a [supported LLM provider](../concepts/evaluation.mdx#supported-llm-providers)
@@ -94,7 +94,7 @@ Source containing `os`, `subprocess`, `socket`, `ctypes`, or `importlib` imports
 
 Use placeholders to inject trace data into your prompt. Available placeholders depend on the selected level:
 
-- **Trace level**: `{trace.input}`, `{trace.output}`, `{trace.get_tool_steps()}`, etc.
+- **Trace level**: `{trace.input}`, `{trace.output}`, `{trace.get_tool_calls()}`, etc.
 - **Agent level**: `{agent_trace.input}`, `{agent_trace.output}`, `{agent_trace.get_tool_steps()}`, etc.
 - **LLM level**: `{llm_span.input}`, `{llm_span.output}`, etc.
 
@@ -109,7 +109,7 @@ User query: {trace.input}
 
 Agent response: {trace.output}
 
-Tools used: {trace.get_tool_steps()}
+Tools used: {trace.get_tool_calls()}
 
 Evaluate whether the agent:
 1. Recommended flights that match the user's stated preferences (dates, budget, airline)

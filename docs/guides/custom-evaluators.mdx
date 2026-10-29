@@ -94,7 +94,7 @@ Source containing `os`, `subprocess`, `socket`, `ctypes`, or `importlib` imports
 
 Use placeholders to inject trace data into your prompt. Available placeholders depend on the selected level:
 
-- **Trace level**: `{trace.input}`, `{trace.output}`, `{trace.get_tool_steps()}`, etc.
+- **Trace level**: `{trace.input}`, `{trace.output}`, `{trace.get_tool_calls()}`, etc.
 - **Agent level**: `{agent_trace.input}`, `{agent_trace.output}`, `{agent_trace.get_tool_steps()}`, etc.
 - **LLM level**: `{llm_span.input}`, `{llm_span.output}`, etc.
 
@@ -109,7 +109,7 @@ User query: {trace.input}
 
 Agent response: {trace.output}
 
-Tools used: {trace.get_tool_steps()}
+Tools used: {trace.get_tool_calls()}
 
 Evaluate whether the agent:
 1. Recommended flights that match the user's stated preferences (dates, budget, airline)

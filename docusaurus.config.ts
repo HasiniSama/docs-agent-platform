@@ -24,12 +24,10 @@ const constantsFile = fs.readFileSync('./docs/_constants.md', 'utf-8');
 const dockerTagMatch = constantsFile.match(/quickStartDockerTag:\s*['"]([^'"]+)['"]/);
 const quickStartDockerTag = dockerTagMatch ? dockerTagMatch[1] : latestVersion;
 
-// Where the announcement bar's link points. A version like "v1.0.0-rc1" is a real
-// release tag; a train like "v0.18.x" never is (that release was tagged v0.18.0), so
-// anything not shaped like an exact version links to the release list instead of a 404.
-const releaseUrl = /^v\d+\.\d+\.\d+/.test(newestRelease)
-  ? `https://github.com/wso2/agent-manager/releases/tag/amp%2F${newestRelease}`
-  : 'https://github.com/wso2/agent-manager/releases';
+// Where the announcement bar's link points: the official wso2.com download page, not a
+// GitHub release, which an STS release may not have.
+const releaseUrl =
+  'https://wso2.com/products/downloads/?product=wso2agentmanager&package=quickstart';
 
 // Pages whose path changed when the docs were reorganised into the
 // Get Started / Concepts / Guides / Tutorials / References structure. The
@@ -284,7 +282,7 @@ const config: Config = {
       // container image tag the quick-start guide pins, and it moves for reasons that have
       // nothing to do with a release: 271d85aaa retagged it to a ThunderID version, which
       // silently changed this banner to announce a "1.0.0" release of Agent Manager that
-      // did not exist — and pointed "Explore what's new" at a tag that 404s.
+      // did not exist.
       // A new id per release shows the bar again to readers who closed the last one.
       id: `release_${newestRelease.replace(/\./g, '_')}`,
       content:
