@@ -38,7 +38,8 @@ type VersionItem = {
 };
 
 type VersionGroup = {
-  // Heading above the group; without one, a divider separates it instead.
+  // Heading above the group; without one, a divider separates it from the
+  // previous group instead.
   label?: string;
   // Version names, as in versions.json; 'current' is Next.
   versions: string[];
@@ -164,17 +165,24 @@ export default function DocsVersionDropdownNavbarItem({
   }
 
   const versionLinks: LinkLikeNavbarItemProps[] = versionGroups
-    ? versionGroups.flatMap((group) => [
-        group.label
-          ? {
-              type: 'html' as const,
-              value: group.label,
-              className: 'dropdown__group-label',
-            }
-          : {
-              type: 'html' as const,
-              value: '<hr class="dropdown__group-divider">',
-            },
+    ? versionGroups.flatMap((group, index) => [
+        // The first group needs no divider above it
+        ...(group.label
+          ? [
+              {
+                type: 'html' as const,
+                value: group.label,
+                className: 'dropdown__group-label',
+              },
+            ]
+          : index > 0
+            ? [
+                {
+                  type: 'html' as const,
+                  value: '<hr class="dropdown__group-divider">',
+                },
+              ]
+            : []),
         // Indent the versions under a heading
         ...group.versions.map((name) => ({
           ...versionNameToLink(name),

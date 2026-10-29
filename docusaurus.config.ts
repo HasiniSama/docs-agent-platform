@@ -322,9 +322,9 @@ const config: Config = {
           position: 'right',
           dropdownActiveClassDisabled: true,
           // Custom option, see src/theme/NavbarItem/DocsVersionDropdownNavbarItem.tsx.
-          // Self-hosted lists Next, then every release in versions.json order.
+          // Next, then every release in versions.json order; a divider sets Cloud apart.
           versionGroups: [
-            {label: 'Self-hosted', versions: ['current', ...versions.filter(v => v !== 'cloud')]},
+            {versions: ['current', ...versions.filter(v => v !== 'cloud')]},
             {versions: ['cloud']},
           ],
         },
