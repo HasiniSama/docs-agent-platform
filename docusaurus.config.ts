@@ -6,15 +6,21 @@ import gtmNoscriptPlugin from './plugins/gtm-noscript';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 const versions: string[] = JSON.parse(fs.readFileSync('./versions.json', 'utf-8'));
+// Versions cut ahead of their release. Their pages are built and reachable by URL,
+// but stay out of the version dropdown, the announcement bar, search, and search
+// engines until the release ships; remove one from this list to publish it.
+const unreleasedVersions = ['v2026.11.0'];
 // STS (short-term support) releases are listed in the version dropdown but never
 // become the default version; the site keeps opening on the latest other release.
 const stsVersions = ['v2026.11.0'];
 const stsLabel = (v: string) => `STS ${v.replace(/^v/, '')}`;
 // Skip non-release entries like "cloud" which are manually maintained versions
 const latestVersion =
-  versions.find(v => /^v\d+/.test(v) && !stsVersions.includes(v)) ?? versions[0];
-// The newest release, STS or not. The announcement bar announces this one.
-const newestRelease = versions.find(v => /^v\d+/.test(v)) ?? versions[0];
+  versions.find(v => /^v\d+/.test(v) && !stsVersions.includes(v) && !unreleasedVersions.includes(v))
+  ?? versions[0];
+// The newest published release, STS or not. The announcement bar announces this one.
+const newestRelease =
+  versions.find(v => /^v\d+/.test(v) && !unreleasedVersions.includes(v)) ?? versions[0];
 const newestReleaseLabel = stsVersions.includes(newestRelease)
   ? stsLabel(newestRelease)
   : newestRelease;
@@ -173,6 +179,7 @@ const config: Config = {
           excludeRoutes: [
             '/agent-platform/docs/',
             '/agent-platform/docs/docs/**',
+            ...unreleasedVersions.map(v => `/agent-platform/docs/${v}/**`),
           ],
         },
       },
@@ -180,8 +187,8 @@ const config: Config = {
     [
       require.resolve('docusaurus-lunr-search'),
       {
-        // Next is unreleased and noindexed; keep it out of search results too.
-        excludeRoutes: ['next', 'next/**'],
+        // Next and unreleased versions are noindexed; keep them out of search results too.
+        excludeRoutes: ['next', 'next/**', ...unreleasedVersions.flatMap(v => [v, `${v}/**`])],
       },
     ],
     [
@@ -235,11 +242,13 @@ const config: Config = {
               path: latestVersion,
             },
             // An STS release sorts above the default version, which would
-            // otherwise give it the "unreleased" banner.
+            // otherwise give it the "unreleased" banner. Until it ships, it keeps
+            // that banner and stays out of search engines.
             ...Object.fromEntries(stsVersions.map((v) => [v, {
               label: stsLabel(v),
               path: v,
-              banner: 'none' as const,
+              banner: unreleasedVersions.includes(v) ? 'unreleased' as const : 'none' as const,
+              noIndex: unreleasedVersions.includes(v),
             }])),
           },
           sidebarPath: './sidebars.ts',
@@ -324,7 +333,7 @@ const config: Config = {
           // Custom option, see src/theme/NavbarItem/DocsVersionDropdownNavbarItem.tsx.
           // Next, then every release in versions.json order; a divider sets Cloud apart.
           versionGroups: [
-            {versions: ['current', ...versions.filter(v => v !== 'cloud')]},
+            {versions: ['current', ...versions.filter(v => v !== 'cloud' && !unreleasedVersions.includes(v))]},
             {versions: ['cloud']},
           ],
         },
