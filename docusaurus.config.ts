@@ -321,6 +321,12 @@ const config: Config = {
           type: 'docsVersionDropdown',
           position: 'right',
           dropdownActiveClassDisabled: true,
+          // Custom option, see src/theme/NavbarItem/DocsVersionDropdownNavbarItem.tsx.
+          // Next, then every release in versions.json order; a divider sets Cloud apart.
+          versionGroups: [
+            {versions: ['current', ...versions.filter(v => v !== 'cloud')]},
+            {versions: ['cloud']},
+          ],
         },
         {
           href: 'https://github.com/wso2/agent-manager',
